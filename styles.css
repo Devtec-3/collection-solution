@@ -494,6 +494,9 @@ tr:hover .row-actions{opacity:1}
 .chart .bar--ink{fill:var(--ink);opacity:.82}
 .chart .point{fill:var(--surface);stroke:var(--accent);stroke-width:1.75}
 .chart .hit{fill:transparent;cursor:crosshair}
+@media (max-width:720px){
+  .chart .x-lbl--alt{display:none}
+}
 .chart-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin-top:10px}
 .chart-legend span{display:inline-flex;align-items:center;gap:5px}
 .swatch{width:8px;height:8px;border-radius:2px;background:var(--accent);flex:none}
@@ -793,11 +796,13 @@ tr:hover .row-actions{opacity:1}
 .chat__composer{border-top:1px solid var(--line);padding:10px 12px;background:var(--surface)}
 .composer-row{display:flex;gap:8px;align-items:flex-end}
 .composer-row .textarea{min-height:38px;height:38px;max-height:120px;font-size:12.5px;padding:9px 10px;border-radius:8px}
-.suggest{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px}
+.suggest{display:flex;gap:5px;flex-wrap:wrap;align-items:flex-start;margin-bottom:8px}
 .suggest button{
-  font-size:10.5px;padding:3px 7px;border-radius:20px;border:1px solid var(--line-2);
+  display:inline-flex;align-items:center;gap:4px;flex:0 1 auto;line-height:1.4;
+  font-size:10.5px;padding:3px 8px;border-radius:20px;border:1px solid var(--line-2);
   color:var(--muted);background:var(--surface);transition:border-color .12s,color .12s;
 }
+.suggest button svg{width:11px;height:11px;flex:none}
 .suggest button:hover{border-color:var(--accent-line);color:var(--accent-ink)}
 .chat__empty{flex:1;display:grid;place-items:center;padding:30px}
 

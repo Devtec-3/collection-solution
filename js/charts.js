@@ -52,7 +52,7 @@ const Chr = {
     let labels = '';
     data.forEach((d,i) => {
       if (i % step !== 0 && i !== data.length - 1) return;
-      labels += '<text x="' + x(i).toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle">' + esc(d.label) + '</text>';
+      labels += '<text class="x-lbl' + (i % 2 ? ' x-lbl--alt' : '') + '" x="' + x(i).toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle">' + esc(d.label) + '</text>';
     });
     const stripW = data.length > 1 ? iw / (data.length - 1) : iw;
     data.forEach((d,i) => {
@@ -89,7 +89,7 @@ const Chr = {
       const bx = padL + slot * i + (slot - bw) / 2;
       bars += '<rect class="' + o.color + '" x="' + bx.toFixed(1) + '" y="' + (padT + ih - h).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + Math.max(0,h).toFixed(1) + '" rx="2" data-tip="' + esc(d.label + ' · ' + o.label + ' ' + money(v)) + '"/>';
       if (i % step === 0 || i === data.length - 1){
-        labels += '<text x="' + (padL + slot * i + slot/2).toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle">' + esc(d.label) + '</text>';
+        labels += '<text class="x-lbl' + (i % 2 ? ' x-lbl--alt' : '') + '" x="' + (padL + slot * i + slot/2).toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle">' + esc(d.label) + '</text>';
       }
     });
     return '<svg class="chart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(o.label) + ' chart">' + grid + bars + labels + '</svg>';
