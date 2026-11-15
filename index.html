@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Adeola Collections — Store System</title>
+<meta name="description" content="Store system for a fashion dealer: inventory, sales, customer book and an AI sales assistant." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400..600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231C1D19'/%3E%3Ctext x='16' y='22' font-family='Helvetica,Arial' font-size='16' font-weight='600' fill='%23F4F1E8' text-anchor='middle'%3EA%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
+
+<!-- ============ LOGIN ============ -->
+<div class="auth" id="auth-screen">
+  <div class="auth__panel">
+    <div class="auth__brand">
+      <div class="wordmark wordmark--light">
+        <span class="wordmark__mark">A</span>
+        <span class="wordmark__text">Adeola Collections</span>
+      </div>
+      <div class="auth__pitch">
+        <p class="eyebrow eyebrow--light">Store system · Lagos</p>
+        <h1>Your shop, your stock,<br />your customers —<br /><em>in one safe place.</em></h1>
+        <p class="auth__lede">Clothes, shoes, bags and accessories. Sales, balances and customer records that no longer live only in one phone or one spreadsheet.</p>
+      </div>
+      <ul class="auth__facts">
+        <li><strong id="auth-stat-products">—</strong><span>products in stock</span></li>
+        <li><strong id="auth-stat-customers">—</strong><span>customers saved</span></li>
+        <li><strong>24/7</strong><span>AI assistant cover</span></li>
+      </ul>
+    </div>
+
+    <div class="auth__form">
+      <div class="auth__form-inner">
+        <p class="eyebrow">Sign in</p>
+        <h2>Welcome back</h2>
+        <p class="muted">Choose a demo account. No password needed in this preview.</p>
+
+        <div class="role-picker" id="role-picker">
+          <label class="role-card">
+            <input type="radio" name="role" value="admin" checked />
+            <span class="role-card__top"><span class="avatar avatar--sm" style="--av:#2F4F3E">AO</span><span>Admin / Owner</span><span class="role-card__check"></span></span>
+            <span class="role-card__desc">Full access: profit, settings, staff, AI controls.</span>
+          </label>
+          <label class="role-card">
+            <input type="radio" name="role" value="staff" />
+            <span class="role-card__top"><span class="avatar avatar--sm" style="--av:#6B4E31">OA</span><span>Staff — Amaka</span><span class="role-card__check"></span></span>
+            <span class="role-card__desc">Sales, products and customers. No profit or settings.</span>
+          </label>
+        </div>
+
+        <p class="field-label">Password</p>
+        <div class="pw-row">
+          <input class="input" type="password" value="demo1234" autocomplete="current-password" aria-label="Password" />
+          <button class="btn btn--primary" id="login-btn">Sign in</button>
+        </div>
+        <p class="hint">Demo password is pre-filled. Press Sign in to continue.</p>
+
+        <div class="auth__note">
+          <strong>Prototype notice</strong>
+          All names, products and amounts below are clearly-labelled sample data held in memory. Nothing is sent anywhere.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div class="app" id="app" hidden>
+  <div class="scrim" id="scrim"></div>
+
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar__head">
+      <div class="wordmark">
+        <span class="wordmark__mark">A</span>
+        <span class="wordmark__text">Adeola<em>Collections</em></span>
+      </div>
+      <button class="icon-btn sidebar__close" id="sidebar-close" aria-label="Close menu"></button>
+    </div>
+
+    <div class="store-switch">
+      <span class="store-switch__dot"></span>
+      <div>
+        <strong>Ikeja store</strong>
+        <span>Demo workspace</span>
+      </div>
+      <span class="store-switch__badge">DEMO</span>
+    </div>
+
+    <nav class="nav" id="nav" aria-label="Main"></nav>
+
+    <div class="sidebar__foot">
+      <div class="sidebar__user" id="sidebar-user"></div>
+      <div class="sidebar__tools">
+        <button class="icon-btn" id="theme-toggle" title="Switch theme" aria-label="Switch theme"></button>
+        <button class="icon-btn" id="help-btn" title="Help" aria-label="Help"></button>
+        <button class="icon-btn" id="logout-btn" title="Sign out" aria-label="Sign out"></button>
+      </div>
+    </div>
+  </aside>
+
+  <div class="shell">
+    <header class="topbar">
+      <button class="icon-btn topbar__menu" id="sidebar-open" aria-label="Open menu"></button>
+      <div class="topbar__title">
+        <h1 id="page-title">Dashboard</h1>
+        <p id="page-sub">—</p>
+      </div>
+
+      <div class="topbar__search">
+        <span class="topbar__search-icon" id="global-search-icon"></span>
+        <input id="global-search" type="search" placeholder="Search products, customers, sales…" aria-label="Global search" autocomplete="off" />
+        <kbd>⌘K</kbd>
+        <div class="search-pop" id="search-pop" hidden></div>
+      </div>
+
+      <div class="topbar__actions">
+        <button class="btn btn--ghost btn--quick" id="quick-btn" aria-expanded="false">
+          <span id="quick-btn-icon"></span> Quick actions
+        </button>
+        <button class="icon-btn notify" id="notify-btn" aria-label="Alerts">
+          <span id="notify-icon"></span><span class="notify__count" id="notify-count" hidden>0</span>
+        </button>
+        <span class="role-chip" id="role-chip"></span>
+      </div>
+      <div class="menu-pop" id="quick-menu" hidden></div>
+      <div class="menu-pop menu-pop--wide" id="notify-menu" hidden></div>
+    </header>
+
+    <main class="view" id="view" tabindex="-1"></main>
+
+    <footer class="appfoot">
+      <span>Adeola Collections · Store System v0.9 prototype</span>
+      <span>Sample data · Naira (₦) · <a href="#" id="foot-help">How numbers are calculated</a></span>
+    </footer>
+  </div>
+</div>
+
+<div id="modal-root"></div>
+<div id="toast-root" class="toast-root" aria-live="polite"></div>
+
+<script src="js/data.js"></script>
+<script src="js/core.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/views-a.js"></script>
+<script src="js/views-b.js"></script>
+<script src="js/views-c.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
