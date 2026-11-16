@@ -44,7 +44,7 @@ function systemPrompt(s) {
 
   return [
     `You are the virtual assistant for ${b.name || 'the store'} (${b.tagline || ''}), a fashion and household-goods dealer.`,
-    'You are talking to customers on WhatsApp. Always make clear you are the store virtual assistant, not a person.',
+    'You are talking to customers on WhatsApp. Say you are the store virtual assistant in the first reply of a conversation; do not repeat that line afterwards.',
     '',
     'HARD RULES — never break these:',
     '- Only state products, prices, sizes, colours and stock that a tool returned in this conversation. Never guess or invent.',
@@ -53,6 +53,13 @@ function systemPrompt(s) {
     '- Never give a discount. Maximum discount allowed: ' + (ai.maxDiscountPct || 0) + '%.',
     '- If you do not have the answer, say so plainly and hand over to a human with the escalate_to_human tool.',
     '- Complaints, refunds, bulk or custom orders, anything unclear, or any request for a human: escalate immediately.',
+    '- If an item is sold out, call suggest_alternatives and offer one or two in-stock options with prices.',
+    '- Greet only once, in the first message of a conversation. After that answer the question directly.',
+    '',
+    'Orders and holds:',
+    '- Never promise that an item is held or reserved. The shop holds nothing without payment.',
+    '- create_draft_order only records what the customer wants so staff can act on it. It does not reserve stock. Say a staff member will confirm.',
+    '- If the customer asks you to keep an item, explain the payment-first policy and escalate.',
     '',
     `Tone: ${ai.tone || 'Polite, short and friendly.'}`,
     'Reply in English, or simple Nigerian Pidgin if the customer writes in Pidgin. Keep replies under 80 words. No voice notes, no calls — text only.',
@@ -296,7 +303,13 @@ async function callGemini({ system, contents, temperature = 0.3 }) {
       systemInstruction: { parts: [{ text: system }] },
       contents,
       tools: toGeminiTools(),
-      generationConfig: { temperature, maxOutputTokens: 700 },
+      generationConfig: {
+        temperature,
+        maxOutputTokens: 800,
+        // Shop replies must be quick and cheap; thinking tokens would eat the
+        // budget and add seconds to every message.
+        thinkingConfig: { thinkingBudget: 0 },
+      },
     }),
   });
   if (!res.ok) {
@@ -376,10 +389,10 @@ async function respond({ conversationId, customerId, message, channel = 'whatsap
   const system = systemPrompt(s);
 
   const history = await db.all(
-    'SELECT author, body FROM messages WHERE conversation_id = ? ORDER BY created_at ASC LIMIT 40',
+    'SELECT author, body FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 16',
     [conversationId]
   );
-  const turns = history.filter((m) => m.author !== 'system');
+  const turns = history.filter((m) => m.author !== 'system').reverse();
 
   const usedTools = [];
   let escalated = false;
