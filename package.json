@@ -1,0 +1,17 @@
+{
+  "name": "dheelarhs-collection",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Store system for Dheelarh's Collection: inventory, sales, customer book and AI sales assistant.",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "optionalDependencies": {
+    "pg": "^8.11.5"
+  }
+}
