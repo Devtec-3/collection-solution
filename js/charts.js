@@ -7,7 +7,7 @@
 
 const Chr = {
   _niceMax(v){
-    if (v <= 0) return 1000;
+    if (v <= 0) return 0;
     const pow = Math.pow(10, Math.floor(Math.log10(v)));
     const n = v / pow;
     const step = n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10;
@@ -20,7 +20,8 @@ const Chr = {
     const W = 720, H = o.height, padL = 46, padR = 8, padT = 12, padB = 26;
     const iw = W - padL - padR, ih = H - padT - padB;
     const vals = data.map(d => d[o.value] || 0);
-    const max = Chr._niceMax(Math.max.apply(null, vals.concat([1])));
+    const max = Chr._niceMax(Math.max.apply(null, vals.concat([0]))) || 1;
+    const flat = !Chr._niceMax(Math.max.apply(null, vals.concat([0])));
     const x = i => padL + (data.length <= 1 ? iw/2 : (i / (data.length - 1)) * iw);
     const y = v => padT + ih - (v / max) * ih;
 
@@ -29,7 +30,7 @@ const Chr = {
       const gy = padT + (ih / o.ticks) * i;
       const gv = max - (max / o.ticks) * i;
       grid += '<line class="grid-line" x1="' + padL + '" x2="' + (W - padR) + '" y1="' + gy.toFixed(1) + '" y2="' + gy.toFixed(1) + '"/>';
-      grid += '<text x="' + (padL - 8) + '" y="' + (gy + 3.5).toFixed(1) + '" text-anchor="end">' + o.fmt(gv) + '</text>';
+      grid += '<text x="' + (padL - 8) + '" y="' + (gy + 3.5).toFixed(1) + '" text-anchor="end">' + o.fmt(flat ? 0 : gv) + '</text>';
     }
 
     let line = '', areaPath = '', hits = '', dots = '';
@@ -72,7 +73,7 @@ const Chr = {
     const o = Object.assign({ value:'revenue', height:220, label:'Revenue', fmt: shortMoney, ticks:4, color:'bar', labelsEvery:0 }, opts || {});
     const W = 720, H = o.height, padL = 46, padR = 8, padT = 12, padB = 26;
     const iw = W - padL - padR, ih = H - padT - padB;
-    const max = Chr._niceMax(Math.max.apply(null, data.map(d => d[o.value] || 0).concat([1])));
+    const max = Chr._niceMax(Math.max.apply(null, data.map(d => d[o.value] || 0).concat([0]))) || 1;
     const slot = data.length ? iw / data.length : iw;
     const bw = Math.max(2, Math.min(26, slot * .62));
     let grid = '';

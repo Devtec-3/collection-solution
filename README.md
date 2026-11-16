@@ -1,205 +1,109 @@
-# Adeola Collections — Store System
+# Dheelarh's Collection — Store System
 
-A working store system for a fashion dealer selling clothes, shoes, bags and accessories. It replaces a loose Excel sheet with inventory, sales and part payments, a customer book that survives a lost phone, and an AI sales assistant that answers only from live stock.
+The shop's real system: stock, sales, part payments and the customer book live in a database, and the AI sales assistant answers customers from that live stock — never from imagination.
 
-Built as a single-page app with no build step, no dependencies and no install.
+**Live:** https://dheelarhs-collection.onrender.com
+**Business:** Dheelarh's Collection · "Home of Varieties" · Jos, Plateau State
+**Currency:** Naira (₦)
 
-[![Live demo](https://img.shields.io/badge/live%20demo-collection--solution--mu.vercel.app-2F4F3E?style=flat-square)](https://collection-solution-mu.vercel.app)
-[![Stack](https://img.shields.io/badge/stack-HTML%20%C2%B7%20CSS%20%C2%B7%20vanilla%20JS-1C1D19?style=flat-square)](#project-structure)
-[![Build](https://img.shields.io/badge/build-none%20required-4A4A45?style=flat-square)](#run-it-locally)
-[![Status](https://img.shields.io/badge/status-prototype%20%C2%B7%20sample%20data-B08A3E?style=flat-square)](#what-this-prototype-does-not-do)
-
-**[Open the live demo →](https://collection-solution-mu.vercel.app)**
-
-![Dashboard — revenue, profit, stock value, sales trend and what needs a human](docs/screenshots/dashboard.png)
+| Live app | Database | Source |
+|---|---|---|
+| [dheelarhs-collection.onrender.com](https://dheelarhs-collection.onrender.com) | Neon Postgres (persistent) | this repo, `main` |
 
 ---
 
-## Try it in two minutes
+## Sign in
 
-1. Open the [live demo](https://collection-solution-mu.vercel.app).
-2. Choose **Admin / Owner** (password is pre-filled) and press **Sign in**.
-3. Go to **AI assistant → Test console** and send these in order:
+| Account | Email | Notes |
+|---|---|---|
+| Owner | `muhammadabdulwadalata@gmail.com` | full access: profit, settings, staff, AI, audit log |
 
-| Type this as the customer | What you should see |
-| --- | --- |
-| `Do you have the adire dress in medium?` | Live price, size, colour and 5 in stock, with `lookup_inventory` and `quote_price` tool calls shown under the reply |
-| `Can I get a discount?` | Refused, because the owner's limit is 0%, and escalated as needing a human |
-| `I have paid, please send it` | Cannot confirm payment; only staff can mark money received |
-| `I want to hold the tote bag. My name is Bola, 0803 555 1212` | Contact saved to the customer book and a draft order created for approval |
-| `How much is delivery to Ajek?` | Answers from settings, never invents a fee |
+The password is not in this repository. It is set in the Render environment as `OWNER_PASSWORD` and used once, on the first boot of an empty database. **Change it from Settings on day one** and hand the account to the client at launch.
 
-Then open **AI orders** to approve the hold, **Inbox** to take over a live conversation, or press **Start call** in the voice simulator to hear an after-hours call unfold and land in the inbox as a transcript.
-
-| Account | What they can see |
-| --- | --- |
-| **Admin / Owner** — Adeola | Everything: cost, profit, settings, staff, AI controls, activity log |
-| **Staff** — Amaka | Sales, stock, customers and inbox. No cost, profit, settings or activity log |
-
-The password is pre-filled: this demonstrates roles, not real authentication.
+Staff accounts are created by the owner (Settings → Staff). Server-side rules mean a staff login physically cannot read cost price, profit, settings or the audit log, and cannot give a discount.
 
 ---
 
-## Screenshots
+## What is live today
 
-| Inventory with live stock, holds and low-stock alerts | Sales, part payments and outstanding balances |
-| --- | --- |
-| ![Inventory](docs/screenshots/inventory.png) | ![Sales](docs/screenshots/sales.png) |
+| Module | State |
+|---|---|
+| Login | Real accounts, scrypt password hashes, database sessions, httpOnly cookie, login rate limit |
+| Dashboard | Revenue, stock value, items sold, low stock, top sellers, needs-attention — computed from the database |
+| Inventory | Add, edit, delete, restock, search, filter, sort, CSV export |
+| Sales & payments | Record a sale, part payment, balance, receipt, delete (owner), stock decremented in a transaction |
+| Customer book | Add, edit, delete, tags, notes, purchase history — contacts survive a lost phone |
+| Inbox | Conversations and messages stored against the customer; staff reply takes over from the assistant |
+| AI assistant | Gemini or Claude with five tools: stock lookup, alternatives, business details, draft order, escalate. Every fact comes from a SQL query |
+| Activity log | Written by the server on every change, including AI actions |
+| Settings | Business profile, policies, AI limits, alerts, privacy |
+| Payments | Bank transfer only: Opay **9021905797**, Dheelarh's Collection. Only staff can mark money received |
 
-| Unified inbox — AI, staff and “needs human” in one list | AI assistant with a live tool-call trace |
-| --- | --- |
-| ![Inbox](docs/screenshots/inbox.png) | ![AI test console](docs/screenshots/ai-console.png) |
-
-| Customer book with balances and purchase history | Reports, printable and exportable |
-| --- | --- |
-| ![Customers](docs/screenshots/customers.png) | ![Reports](docs/screenshots/reports.png) |
-
-| AI controls and guardrails | Dark mode |
-| --- | --- |
-| ![AI assistant](docs/screenshots/ai-assistant.png) | ![Dark dashboard](docs/screenshots/dashboard-dark.png) |
-
-<p align="center">
-  <img src="docs/screenshots/login.png" width="49%" alt="Sign-in screen" />
-  <img src="docs/screenshots/mobile-dashboard.png" width="24%" alt="Dashboard on a phone" />
-</p>
+**Profit is honest:** until cost prices are entered, the dashboard says *Unknown — add cost prices* instead of showing takings as profit. The database stores `profit_known = 0` for those sales.
 
 ---
 
-## What this prototype does
+## What is not connected yet
 
-**Dashboard** — revenue, gross profit (owner only), stock value, items sold, low stock, top sellers, pending AI orders, AI conversations handled and a “needs human attention” list. Switch between 7, 30 and 90 days.
-
-**Inventory** — add, edit, delete, restock, search, filter by category or status, sort any column. Cost is hidden from staff. CSV import by paste or file with a column preview, CSV export, per-product low-stock threshold, and a held count fed by AI reservations.
-
-**Sales & accounts** — multi-item sales against a saved or brand-new customer, discounts (owner only), part payments, receipts that print or copy for WhatsApp, and a **How this is calculated** panel mapping every figure to its Excel formula.
-
-**Customer book** — name, WhatsApp number, area, VIP/Wholesale/Retail tags, notes, purchase history, total spent, outstanding balance and last purchase. CSV import/export plus JSON backup and restore, so contacts can never be lost again.
-
-**Unified inbox** — WhatsApp and phone calls in one list, filtered by AI, staff or needs human. Full transcripts, AI tool-call traces, take over, hand back, suggested replies, and a click-to-chat link with QR code.
-
-**AI assistant** — on/off and after-hours scheduling, business hours, greeting, delivery and returns policies, tone, discount limit, approval threshold, escalation topics, an order approval queue, chat and voice test consoles, and analytics on what it handled and what it could not answer.
-
-**Reports** — sales summary, stock valuation, customer balances and profit by item, with CSV export and print/save-as-PDF styles that remove all app chrome.
-
-**Activity log** — every change with actor and time, including AI actions and guardrail refusals.
-
-**Settings** — business profile, default low-stock level, staff accounts, permissions matrix, alerts, backup schedule, privacy controls and a demo reset.
-
-Also: light and dark mode, `S` for a new sale, `I` for the inbox, `⌘/Ctrl K` global search across products, customers, sales and conversations, empty states with guidance, and a layout that holds down to 390px.
-
----
-
-## The workflow it models
-
-```
-stock in → pricing → customer enquiry (message or call)
-        → AI or staff reply → hold / draft order
-        → payment → sale recorded → stock reduced → reports
-```
-
-| Step | Screen | What is recorded |
-| --- | --- | --- |
-| Stock in | Inventory → Add product / Restock | Cost, selling price, quantity, size, colour, grade, low-stock level |
-| Pricing | Inventory | One selling price per product — the only price the assistant may quote |
-| Enquiry | Inbox | Channel, customer and full message history |
-| Reply | Inbox / AI console | Who replied, plus every tool call the AI made |
-| Hold | AI assistant → Orders | Draft order, expiry time, separate approval step |
-| Payment | Sales → Record payment | Amount, method and who confirmed it |
-| Sale | Sales → Record sale | Line items, discount, paid, balance, cost at time of sale |
-| Stock down | automatic | Quantity reduced when the sale is saved |
-| Reports | Reports | Sales, stock valuation, balances, profit by item |
-
-**Assumptions:** one shop, one stock location (Ikeja); Naira only, no VAT; customers are individuals or small resellers; sales can be part-paid; stock is owned outright; WhatsApp is the main channel with calls secondary; the user is not technical and mostly works on a phone.
-
-**Risks named up front:** another WhatsApp ban (official Business Platform only, no unofficial automation), invented stock or prices (tool calls, no match means it says so), an AI confirming payment (impossible by design), overselling a held item (holds reduce available stock), losing contacts again (customer book plus CSV and backups), and margin leakage (cost and profit never reach staff or the assistant). The full risk table is in the [production roadmap](ROADMAP.md).
-
----
-
-## AI rules, as implemented
-
-**It can** look up live stock by name, size, colour or category; quote the saved selling price; say an item is sold out and offer in-stock alternatives; answer hours, location, delivery and payment questions from settings; create a 24-hour hold and a draft order; save a new contact; reply in English or simple Nigerian Pidgin.
-
-**It cannot** invent a product, size, price, discount or policy; exceed the owner's discount limit; confirm a payment or release goods; reveal cost price, profit or another customer's details; approve its own order; or hide that it is a virtual assistant.
-
-**It escalates** complaints and returns, refunds, wholesale and bulk pricing, custom orders, discount requests, payment claims, unanswerable questions, fully-held stock and any request for a human. Every escalation reaches the dashboard, the inbox and the activity log with a reason.
-
-**How the numbers work** — one calculation module serves every screen, receipt and report:
-
-```
-line total    = qty × selling price
-subtotal      = Σ line totals
-total         = subtotal − discount
-balance       = total − paid
-cost of goods = Σ qty × cost price at time of sale
-gross profit  = total − cost of goods
-stock value   = Σ qty × cost price
-```
-
----
-
-## Design
-
-Grounded in how Stripe, Linear, Mercury and Attio handle dense business software rather than a generic dashboard template: tables as the primary interface, restraint, one dominant number per card, and AI treated as a designed surface rather than a chat bubble bolted on.
-
-One typeface family — **Geist**, with Geist Mono and tabular figures for money — on a warm ivory canvas, ink as the primary action colour and a single pine accent. Type scale: 10–11px tracked labels, 12.5–14px body, 19px page titles, 26px metrics. All colour, spacing and component states live as tokens in `styles.css`.
+| Piece | Status | What unblocks it |
+|---|---|---|
+| AI API key | Engine is built; without a key every chat is handed to a human | `GEMINI_API_KEY` from [aistudio.google.com/apikey](https://aistudio.google.com/apikey) (free, no card) |
+| WhatsApp replies | Not wired | Meta Business Portfolio approval for the Cloud API |
+| Voice calls | Not built | Twilio / Africa's Talking number (note: the shop's policy says **no WhatsApp calls**, so voice is a normal phone line) |
+| Product photos | URL field only | S3-compatible endpoint + access key + secret |
+| Automatic backups | Neon keeps point-in-time history; scheduled dumps not set up | Neon paid plan or a nightly export job |
+| Cost prices & opening stock | Unknown by design | The client's Excel |
 
 ---
 
 ## Run it locally
 
 ```bash
-git clone https://github.com/Devtec-3/collection-solution.git
-cd collection-solution
-open index.html          # macOS
-# or: python3 -m http.server 8000  →  http://localhost:8000
+npm install          # only dependency: pg
+cp .env.example .env # then fill DATABASE_URL and OWNER_* 
+node server/index.js # http://localhost:3000
 ```
 
-No install, no build, no environment variables, no API keys.
-
----
+Without `DATABASE_URL` the server falls back to SQLite in `.data/` for development. Nothing else changes.
 
 ## Deploy
 
-The live site runs on Vercel as a static deployment:
-
-**https://collection-solution-mu.vercel.app**
-
-To ship a change:
-
-```bash
-npx vercel deploy --prod
-```
-
-Every file is static, so any static host (Vercel, Netlify, Cloudflare Pages, GitHub Pages) will serve it unchanged.
+`render.yaml` describes the whole service, so Render can create it from this repo in one click. Environment variables: `DATABASE_URL`, `PAYMENT_ACCOUNT_NUMBER`, and optionally `GEMINI_API_KEY`. Pushing to `main` redeploys automatically.
 
 ---
 
-## Project structure
+## Structure
 
 ```
-index.html          app shell, sign-in and layout
-styles.css          design tokens, components, responsive and print styles
-js/data.js          clearly-labelled sample data and seeded history
-js/core.js          state, formatting, calculations, icons, modals, CSV
+index.html          the shell: sign-in screen and app chrome
+styles.css          design system, light and dark
+js/data.js          shape of the in-memory store the views read
+js/api.js           API layer: loads the database into that store, and every write
+js/core.js          formatting, spreadsheet-accurate calculations, UI primitives
 js/charts.js        dependency-free SVG charts
-js/ai.js            assistant engine: intents, tool calls, guardrails
-js/views-a.js       dashboard, inventory, sales
-js/views-b.js       customers, inbox, AI console
-js/views-c.js       reports, activity, settings
-js/app.js           routing, roles, search, quick actions, events
-docs/screenshots/   images used in this README
-ROADMAP.md          production plan: stack, costs, WhatsApp and voice setup, training
+js/ai.js            browser-side assistant simulation (test console fallback)
+js/views-*.js       dashboard, inventory, sales, customers, inbox, AI, reports, settings
+js/app.js           boot, sign-in, routing, events
+server/index.js     HTTP server: static files + /api
+server/api.js       every endpoint, all validation and role rules
+server/ai.js        Gemini / Claude tool calling with guardrails
+server/db.js        Postgres (production) or SQLite (local), one SQL dialect
+server/schema.js    tables
+server/seed.js      first-run data: the client's catalogue, prices and policies
+LIVE-SETUP.md       go-live checklist, credentials, what is still missing
 ```
+
+## Guardrails the assistant cannot break
+
+- No invented products, prices or stock — a tool call or nothing.
+- Never reveals cost price, profit, margins or another customer's record.
+- Never confirms a payment; it may only give the account details.
+- No discount beyond the owner's limit (currently 0%).
+- Complaints, refunds, bulk or custom orders, payment confirmations and anything unclear go to a human, flagged on the dashboard.
+- Says it is the store's virtual assistant, and replies by text only.
 
 ---
 
-## What this prototype does not do
+## Verified
 
-Stated plainly so nothing is oversold:
-
-- The assistant is a **deterministic local simulation**, not a live Claude model. Intents, tool calls and guardrails are real code, but no API is called.
-- All data is **sample data in memory**. Refreshing restores the demo business.
-- Nothing is connected to WhatsApp, telephony or a payment provider. Those integrations are designed for and simulated.
-- Sign-in demonstrates roles; it is not authentication.
-
-The phased plan to make it real — Next.js and PostgreSQL, WhatsApp Business Cloud API, a voice provider with speech-to-text and text-to-speech, Claude tool calling, Paystack or Flutterwave, monthly costs, testing checklist, staff training and Excel import — is in **[ROADMAP.md](ROADMAP.md)**.
+Manual end-to-end pass against the live Neon database: login and session, wrong password refused, unauthenticated requests refused, staff blocked from cost/profit/settings/audit, sale with part payment recorded (`part-paid`, balance kept), stock decremented, customer auto-created from the sale, over-selling refused, payment added to an existing sale, product create/edit/restock/delete, customer create/edit/delete, settings saved, AI fallback when no key is set. Front end driven in headless Chrome with no console errors beyond the expected 401 on the guest `/api/me` call.

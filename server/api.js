@@ -275,7 +275,7 @@ route('GET', /^\/api\/customers$/, async (req, res, { user, query }) => {
       };
     }),
   };
-}, { auth: false });
+});
 
 route('POST', /^\/api\/customers$/, async (req, res, { body, user }) => {
   const phone = normalisePhone(text(body.phone, 'Phone number', { max: 20 }));
@@ -300,7 +300,7 @@ route('POST', /^\/api\/customers$/, async (req, res, { body, user }) => {
   );
   await audit(user, 'customer.created', 'customer', row.id, row.name);
   return { customer: customer(row) };
-}, { auth: false });
+});
 
 route('PATCH', /^\/api\/customers\/([^/]+)$/, async (req, res, { body, user, params }) => {
   const existing = await db.one('SELECT * FROM customers WHERE id = ?', [params[0]]);
@@ -334,8 +334,11 @@ route('GET', /^\/api\/sales$/, async (req, res, { user, query }) => {
   const sql = `SELECT * FROM sales ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY created_at DESC LIMIT 500`;
   const rows = await db.all(sql, params);
   const items = await db.all('SELECT * FROM sale_items');
+  const payments = await db.all('SELECT * FROM payments ORDER BY created_at ASC');
   const bySale = {};
   for (const it of items) (bySale[it.sale_id] ||= []).push(it);
+  const paysBySale = {};
+  for (const p of payments) (paysBySale[p.sale_id] ||= []).push(p);
   return {
     sales: rows.map((s) => ({
       ...s,
@@ -343,6 +346,7 @@ route('GET', /^\/api\/sales$/, async (req, res, { user, query }) => {
       profit_known: !!s.profit_known,
       balance: s.total - s.paid,
       items: bySale[s.id] || [],
+      payments: paysBySale[s.id] || [],
     })),
   };
 });
@@ -466,6 +470,66 @@ route('POST', /^\/api\/sales$/, async (req, res, { body, user }) => {
   return result;
 });
 
+route('POST', /^\/api\/sales\/([^/]+)\/payments$/, async (req, res, { body, user, params }) => {
+  const sale = await db.one('SELECT * FROM sales WHERE id = ?', [params[0]]);
+  if (!sale) throw new HttpError(404, 'Sale not found');
+  const amount = int(body.amount, 'Amount', { min: 1 });
+  const balance = sale.total - sale.paid;
+  if (amount > balance) throw new HttpError(400, `That is more than the balance of ₦${balance.toLocaleString('en-NG')}`);
+
+  const stamp = now();
+  await db.tx(async (t) => {
+    await t.run(
+      'INSERT INTO payments (id, sale_id, amount, method, reference, taken_by, created_at) VALUES (?,?,?,?,?,?,?)',
+      [uid(), sale.id, amount, String(body.method || 'transfer').slice(0, 30), String(body.reference || '').slice(0, 80) || null, user.id, stamp]
+    );
+    const paid = sale.paid + amount;
+    const status = paid >= sale.total ? 'paid' : 'part-paid';
+    await t.run('UPDATE sales SET paid = ?, status = ?, updated_at = ? WHERE id = ?', [paid, status, stamp, sale.id]);
+    await t.run(
+      'INSERT INTO audit_log (id, user_id, actor, action, entity, entity_id, detail, created_at) VALUES (?,?,?,?,?,?,?,?)',
+      [uid(), user.id, user.role, 'payment.recorded', 'sale', sale.id, `₦${amount.toLocaleString('en-NG')} on ${sale.invoice_no}`, stamp]
+    );
+  });
+  return { sale: await db.one('SELECT * FROM sales WHERE id = ?', [sale.id]) };
+});
+
+route('DELETE', /^\/api\/sales\/([^/]+)$/, async (req, res, { user, params }) => {
+  const sale = await db.one('SELECT * FROM sales WHERE id = ?', [params[0]]);
+  if (!sale) throw new HttpError(404, 'Sale not found');
+  await db.tx(async (t) => {
+    await t.run('DELETE FROM payments WHERE sale_id = ?', [sale.id]);
+    await t.run('DELETE FROM sale_items WHERE sale_id = ?', [sale.id]);
+    await t.run('DELETE FROM sales WHERE id = ?', [sale.id]);
+    await t.run(
+      'INSERT INTO audit_log (id, user_id, actor, action, entity, entity_id, detail, created_at) VALUES (?,?,?,?,?,?,?,?)',
+      [uid(), user.id, user.role, 'sale.deleted', 'sale', sale.id, `${sale.invoice_no} · ₦${sale.total.toLocaleString('en-NG')}`, now()]
+    );
+  });
+  return { ok: true };
+}, { owner: true });
+
+route('DELETE', /^\/api\/customers\/([^/]+)$/, async (req, res, { user, params }) => {
+  const c = await db.one('SELECT * FROM customers WHERE id = ?', [params[0]]);
+  if (!c) throw new HttpError(404, 'Customer not found');
+  await db.run('UPDATE sales SET customer_id = NULL WHERE customer_id = ?', [c.id]);
+  await db.run('UPDATE conversations SET customer_id = NULL WHERE customer_id = ?', [c.id]);
+  await db.run('DELETE FROM customers WHERE id = ?', [c.id]);
+  await audit(user, 'customer.deleted', 'customer', c.id, `${c.name} · ${c.phone}`);
+  return { ok: true };
+}, { owner: true });
+
+route('GET', /^\/api\/staff$/, async () => {
+  const rows = await db.all('SELECT id, name, email, phone, role, active FROM users ORDER BY created_at ASC');
+  return { staff: rows };
+});
+
+route('GET', /^\/api\/public\/stats$/, async () => {
+  const p = await db.one("SELECT COUNT(*) AS n FROM products WHERE qty > 0");
+  const c = await db.one('SELECT COUNT(*) AS n FROM customers');
+  return { products: Number(p.n), customers: Number(c.n) };
+}, { auth: false });
+
 /* --- dashboard --- */
 
 route('GET', /^\/api\/dashboard$/, async (req, res, { user }) => {
@@ -532,7 +596,10 @@ route('GET', /^\/api\/conversations$/, async (req, res) => {
        FROM conversations c LEFT JOIN customers cu ON cu.id = c.customer_id
       ORDER BY c.updated_at DESC`
   );
-  return { conversations: rows };
+  const msgs = await db.all('SELECT * FROM messages ORDER BY created_at ASC LIMIT 4000');
+  const byConv = {};
+  for (const m of msgs) (byConv[m.conversation_id] ||= []).push({ from: m.author, text: m.body, at: m.created_at });
+  return { conversations: rows.map((c) => ({ ...c, messages: byConv[c.id] || [] })) };
 });
 
 route('GET', /^\/api\/conversations\/([^/]+)\/messages$/, async (req, res, { params }) => {

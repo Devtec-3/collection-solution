@@ -48,7 +48,7 @@ function viewReports(){
         return '<tr><td class="mono">' + esc(s.id) + '</td><td>' + fmtDate(s.date) + '</td><td>' + esc(c ? c.name : 'Walk-in') + '</td>' +
           '<td class="small">' + esc(s.items.map(i => i.qty + '× ' + i.name).join(', ')) + '</td>' +
           '<td class="num">' + money(Calc.total(s)) + '</td><td class="num">' + money(s.paid) + '</td><td class="num">' + money(Calc.balance(s)) + '</td>' +
-          (isAdmin ? '<td class="num">' + money(Calc.profit(s)) + '</td>' : '') + '</tr>';
+          (isAdmin ? '<td class="num">' + (Calc.profit(s) === null ? '—' : money(Calc.profit(s))) + '</td>' : '') + '</tr>';
       }).join('') + '</tbody>' +
       '<tfoot><tr><td colspan="4">' + sales.length + ' sales</td><td class="num">' + money(revenue) + '</td><td class="num">' + money(collected) + '</td><td class="num">' + money(owed) + '</td>' + (isAdmin ? '<td class="num">' + money(profit) + '</td>' : '') + '</tr></tfoot></table>';
     footNote = 'Revenue is total after discounts. Collected is cash actually received.';
@@ -104,7 +104,7 @@ function viewReports(){
     kpis = reportKpis([
       ['Revenue', money(revenue)],
       ['Cost of goods', money(cogs)],
-      ['Gross profit', money(profit)],
+      ['Gross profit', list.some(s => Calc.profit(s) === null) ? 'Unknown — add cost prices' : money(profit)],
       ['Blended margin', pct(revenue ? (profit/revenue)*100 : 0, 1)]
     ]);
     table = '<table class="table"><thead><tr><th>Product</th><th class="num">Qty sold</th><th class="num">Revenue</th><th class="num">Cost</th><th class="num">Profit</th><th class="num">Margin</th></tr></thead><tbody>' +
@@ -167,7 +167,7 @@ App.actions['rep.csv'] = () => {
   } else {
     const sales = SEED.sales.filter(s => new Date(s.date) >= cut);
     downloadFile('report-sales.csv', toCSV(['invoice','date','customer','total','paid','balance','profit'].slice(0, isAdmin ? 7 : 6),
-      sales.map(s => { const c = customerById(s.customerId); return [s.id, s.date, c ? c.name : 'Walk-in', Calc.total(s), s.paid, Calc.balance(s)].concat(isAdmin ? [Calc.profit(s)] : []); })));
+      sales.map(s => { const c = customerById(s.customerId); return [s.id, s.date, c ? c.name : 'Walk-in', Calc.total(s), s.paid, Calc.balance(s)].concat(isAdmin ? [(Calc.profit(s) === null ? '' : Calc.profit(s))] : []); })));
   }
   toast('Report exported');
 };
@@ -345,35 +345,53 @@ function viewSettings(){
 }
 
 App.actions['set.tab'] = (el) => { App.state.settingsTab = el.getAttribute('data-value'); render(); };
-App.actions['set.saveBusiness'] = () => {
+App.actions['set.saveBusiness'] = async () => {
   const get = (id) => (document.getElementById(id) || {}).value || '';
-  SEED.business.name = get('bs-name');
-  SEED.business.tagline = get('bs-tag');
-  SEED.business.phone = get('bs-phone');
-  SEED.business.whatsapp = get('bs-wa');
-  SEED.business.address = get('bs-addr');
-  SEED.settings.defaultLowStock = Number(get('bs-lowstock')) || 3;
-  logActivity('Updated business profile', SEED.business.name + ' · ' + SEED.business.phone, 'settings');
-  toast('Business profile saved'); render();
+  const phones = get('bs-phone').split(/[·,\/]/).map(s => s.trim()).filter(Boolean);
+  const business = {
+    name: get('bs-name'),
+    tagline: get('bs-tag'),
+    phones,
+    whatsapp: get('bs-wa'),
+    address: get('bs-addr'),
+    hours: SEED.business.hours,
+    delivery: SEED.business.delivery,
+    pickup: SEED.business.pickup,
+  };
+  try {
+    await API.saveSettings({ business });
+    await API.loadAll();
+    toast('Business profile saved');
+    render();
+  } catch (err) { toast(err.message, 'error'); }
 };
+
+async function saveStorePrefs(patch, message){
+  try {
+    await API.saveSettings({ store: Object.assign({}, SEED.store || {}, patch) });
+    SEED.store = Object.assign({}, SEED.store || {}, patch);
+    toast(message);
+    render();
+  } catch (err) { toast(err.message, 'error'); }
+}
 App.actions['set.saveAlerts'] = () => {
-  const a = SEED.settings.alerts;
-  a.lowStock = document.getElementById('al-low').checked;
-  a.notifyOwner = document.getElementById('al-owner').checked;
-  a.channel = document.getElementById('al-channel').value;
-  logActivity('Updated alert settings', a.channel + ' · low stock ' + (a.lowStock ? 'on' : 'off'), 'settings');
-  toast('Alert settings saved'); render();
+  saveStorePrefs({ alerts: {
+    lowStock: document.getElementById('al-low').checked,
+    notifyOwner: document.getElementById('al-owner').checked,
+    channel: document.getElementById('al-channel').value,
+  } }, 'Alert settings saved');
 };
 App.actions['set.saveBackup'] = () => {
-  SEED.settings.backup.frequency = document.getElementById('bk-freq').value;
-  SEED.settings.backup.time = document.getElementById('bk-time').value;
-  logActivity('Updated backup schedule', SEED.settings.backup.frequency + ' at ' + SEED.settings.backup.time, 'settings');
-  toast('Backup schedule saved'); render();
+  saveStorePrefs({ backup: {
+    frequency: document.getElementById('bk-freq').value,
+    time: document.getElementById('bk-time').value,
+  } }, 'Backup schedule saved');
 };
 App.actions['set.savePrivacy'] = () => {
-  SEED.settings.privacy.optOut = document.getElementById('pv-opt').checked;
-  logActivity('Updated privacy settings', 'Retention and opt-out preferences', 'settings');
-  toast('Privacy settings saved'); render();
+  saveStorePrefs({ privacy: {
+    optOut: document.getElementById('pv-opt').checked,
+    retentionMonths: SEED.settings.privacy.retentionMonths,
+  } }, 'Privacy settings saved');
 };
 App.actions['set.addStaff'] = () => {
   openModal({

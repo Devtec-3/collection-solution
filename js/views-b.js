@@ -140,7 +140,7 @@ function customerForm(id){
     footer: '<button class="btn btn--secondary" data-close-modal>Cancel</button>' +
       '<button class="btn btn--primary" id="cf-save">' + (c ? 'Save changes' : 'Add customer') + '</button>',
     onMount(root){
-      root.querySelector('#cf-save').addEventListener('click', () => {
+      root.querySelector('#cf-save').addEventListener('click', async () => {
         const name = root.querySelector('#cf-name').value.trim();
         const phone = root.querySelector('#cf-phone').value.trim();
         if (!name || !phone){ toast('Name and phone number are required', 'error'); return; }
@@ -149,16 +149,17 @@ function customerForm(id){
         const tags = Array.from(root.querySelectorAll('.cf-tag:checked')).map(x => x.value);
         const data = { name, phone, location: root.querySelector('#cf-loc').value.trim() || 'Not provided',
           tags: tags.length ? tags : ['Retail'], notes: root.querySelector('#cf-notes').value.trim() };
-        if (c){
-          Object.assign(c, data);
-          logActivity('Updated customer ' + c.name, c.phone + ' · ' + c.tags.join(', '), 'customer');
-          toast('Customer updated');
-        } else {
-          SEED.customers.unshift(Object.assign({ id: uid('c'), createdAt: new Date().toISOString().slice(0,10) }, data));
-          logActivity('Added customer ' + name, phone + ' · ' + data.tags.join(', '), 'customer');
-          toast('Customer saved');
+        const saveBtn = root.querySelector('#cf-save');
+        saveBtn.disabled = true;
+        try {
+          if (c){ await API.updateCustomer(c.id, data); toast('Customer updated'); }
+          else { await API.createCustomer(data); toast('Customer saved'); }
+          await API.loadAll();
+          closeModal(); render();
+        } catch (err) {
+          toast(err.message, 'error');
+          saveBtn.disabled = false;
         }
-        closeModal(); render();
       });
     }
   });
@@ -173,10 +174,12 @@ App.actions['cust.delete'] = (el) => {
     title: 'Delete ' + c.name + '?',
     body: 'Their sales history stays in your records, but the contact details and notes are removed. In production this needs owner rights and a reason.',
     ok: 'Delete customer', danger: true,
-    onOk(){
-      SEED.customers = SEED.customers.filter(x => x.id !== c.id);
-      logActivity('Deleted customer ' + c.name, c.phone, 'customer');
-      toast('Customer deleted'); render();
+    async onOk(){
+      try {
+        await API.deleteCustomer(c.id);
+        await API.loadAll();
+        toast('Customer deleted'); render();
+      } catch (err) { toast(err.message, 'error'); }
     }
   });
 };
@@ -469,7 +472,7 @@ function viewInbox(){
       '</div>' +
       chatBody +
     '</div>' +
-    '<p class="hint">Demo note: WhatsApp and phone messages are simulated in this preview. In production the same conversation records are written by the WhatsApp Business Cloud API and the voice provider.</p>' +
+    '<p class="hint">Messages sent from this inbox are stored against the customer record. WhatsApp delivery switches on when the Business number is approved.</p>' +
   '</div>';
 }
 
@@ -519,25 +522,24 @@ App.actions['inbox.suggest'] = () => {
   toast('Draft suggestion ready — review before sending', 'info');
 };
 
-App.actions['inbox.send'] = () => {
+App.actions['inbox.send'] = async () => {
   const box = document.getElementById('inbox-input');
   if (!box) return;
   const text = box.value.trim();
   if (!text) return;
   const c = SEED.conversations.find(x => x.id === App.state.inbox.selected);
   if (!c) return;
-  const me = staffById(App.state.user || 'u1');
   const wasAI = c.status === 'ai';
-  c.messages.push({ from:'staff', text, at:new Date().toISOString(), who: me.name.split(' ')[0] });
-  c.status = 'staff';
-  c.needsAttention = false;
-  c.attentionReason = '';
-  c.lastAt = new Date().toISOString();
-  c.unread = 0;
   box.value = '';
-  logActivity('Replied to ' + ((customerById(c.customerId)||{}).name || 'customer'), text.slice(0,90), 'customer');
-  if (wasAI) toast('Sent · you have taken over from the assistant');
-  render();
+  try {
+    await API.sendMessage(c.id, text);
+    await API.loadAll();
+    if (wasAI) toast('Sent · you have taken over from the assistant');
+    render();
+  } catch (err) {
+    box.value = text;
+    toast(err.message, 'error');
+  }
 };
 
 App.actions['inbox.share'] = () => {
@@ -638,26 +640,26 @@ function viewAI(){
           '</div>' +
         '</div>' +
 
-        '<div class="card"><div class="card__head"><div><h2>Integrations</h2><p>Designed for, simulated in this preview</p></div></div>' +
+        '<div class="card"><div class="card__head"><div><h2>Integrations</h2><p>What is connected today</p></div></div>' +
           '<div class="card__body stack" style="gap:12px">' +
             '<div class="list-row" style="padding:0;border:0">' +
               '<span class="attention__icon" style="background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent-ink)">' + icon('message') + '</span>' +
               '<span class="list-row__body"><strong>WhatsApp Business Cloud API</strong><span>Official platform · opt-in and message templates · no unofficial automation</span></span>' +
-              '<span class="chip chip--line">Demo</span></div>' +
+              '<span class="chip chip--line">Pending Meta</span></div>' +
             '<div class="list-row" style="padding:0;border:0">' +
               '<span class="attention__icon">' + icon('phone') + '</span>' +
               '<span class="list-row__body"><strong>Voice — Twilio / Africa\'s Talking</strong><span>Local number, speech-to-text, text-to-speech, transcript saved</span></span>' +
-              '<span class="chip chip--line">Demo</span></div>' +
+              '<span class="chip chip--line">Not set up</span></div>' +
             '<div class="list-row" style="padding:0;border:0">' +
               '<span class="attention__icon">' + icon('sparkles') + '</span>' +
-              '<span class="list-row__body"><strong>Claude with tool calling</strong><span>Inventory lookup, reservation and customer creation as tools</span></span>' +
-              '<span class="chip chip--line">Demo</span></div>' +
+              '<span class="list-row__body"><strong>Gemini or Claude with tool calling</strong><span>Inventory lookup, reservation and customer creation as tools</span></span>' +
+              '<span class="chip chip--line">Add API key</span></div>' +
             '<div class="list-row" style="padding:0;border:0">' +
               '<span class="attention__icon">' + icon('wallet') + '</span>' +
               '<span class="list-row__body"><strong>Paystack / Flutterwave</strong><span>Payment links and verified webhooks — later phase</span></span>' +
               '<span class="chip chip--line">Later</span></div>' +
             '<div class="banner" style="margin-top:2px">' + icon('info') +
-              '<span>Nothing is sent to a real customer in this prototype. The same tool calls and guardrails run locally so you can test the behaviour first.</span></div>' +
+              '<span>The test console below is wired to the live assistant: every answer comes from the stock table. Replying to real customers on WhatsApp switches on once the Meta Business number is approved.</span></div>' +
           '</div>' +
         '</div>' +
       '</div>';
@@ -975,16 +977,27 @@ App.actions['ai.convert'] = (el) => {
   setTimeout(() => receiptModal(sale.id), 120);
 };
 
-App.actions['ai.console.send'] = () => {
+App.actions['ai.console.send'] = async () => {
   const box = document.getElementById('ai-input');
   if (!box) return;
   const text = box.value.trim();
   if (!text) return;
   if (!App.state.ai.consoleMessages.length) App.state.ai.consoleMessages = [];
   App.state.ai.consoleMessages.push({ from:'customer', text, tools:[] });
-  const res = AIEngine.handle(text, {});
-  App.state.ai.consoleMessages.push({ from:'ai', text: res.reply, tools: res.tools.map(t => ({ name:t.name, result:t.result, ok:t.ok })) });
   box.value = '';
+  render();
+  try {
+    const res = await API.aiChat(text);
+    App.state.ai.consoleMessages.push({
+      from:'ai',
+      text: res.reply,
+      tools: (res.tool_calls || []).map(name => ({ name, result: 'checked the live database', ok: true })),
+      provider: res.provider,
+    });
+    await API.loadAll();
+  } catch (err) {
+    App.state.ai.consoleMessages.push({ from:'ai', text: 'Could not reach the assistant: ' + err.message, tools: [] });
+  }
   render();
   const log = document.getElementById('ai-log');
   if (log) log.scrollTop = log.scrollHeight;

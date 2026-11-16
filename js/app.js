@@ -260,27 +260,42 @@ function helpModal(){
 
 /* ---------- login ---------- */
 function bootLogin(){
-  document.getElementById('auth-stat-products').textContent = String(SEED.products.length);
-  document.getElementById('auth-stat-customers').textContent = String(SEED.customers.length);
+  const emailEl = document.getElementById('login-email');
+  const pwEl = document.getElementById('login-password');
   const btn = document.getElementById('login-btn');
-  const signIn = () => {
-    const role = (document.querySelector('input[name="role"]:checked') || {}).value || 'admin';
-    App.state.role = role;
-    App.state.user = role === 'admin' ? 'u1' : 'u2';
-    document.getElementById('auth-screen').hidden = true;
-    document.getElementById('app').hidden = false;
-    logActivity('Signed in', staffById(App.state.user).name + ' · ' + (role === 'admin' ? 'Owner' : 'Staff'), 'system');
-    render();
+  const errEl = document.getElementById('login-error');
+  const signIn = async () => {
+    const email = (emailEl.value || '').trim();
+    const password = pwEl.value || '';
+    if (!email || !password){ errEl.textContent = 'Enter your email and password.'; return; }
+    btn.disabled = true;
+    errEl.textContent = 'Signing in…';
+    try {
+      const out = await API.login(email, password);
+      await enterApp(out.user);
+      errEl.textContent = '';
+    } catch (err) {
+      errEl.textContent = err.message;
+    } finally {
+      btn.disabled = false;
+    }
   };
   btn.addEventListener('click', signIn);
-  document.querySelectorAll('input[name="role"]').forEach(r => {
-    r.addEventListener('keydown', (e) => { if (e.key === 'Enter') signIn(); });
-  });
-  document.getElementById('role-picker').addEventListener('click', (e) => {
-    const card = e.target.closest('.role-card');
-    if (!card) return;
-    card.querySelector('input').checked = true;
-  });
+  [emailEl, pwEl].forEach((el) => el.addEventListener('keydown', (e) => { if (e.key === 'Enter') signIn(); }));
+}
+
+/* Sign in, load everything from the database, then show the app. */
+async function enterApp(user){
+  App.state.user = user.id;
+  App.state.role = user.role === 'owner' ? 'admin' : 'staff';
+  try {
+    await API.loadAll();
+  } catch (err) {
+    toast('Could not load the shop data: ' + err.message, 'error');
+  }
+  document.getElementById('auth-screen').hidden = true;
+  document.getElementById('app').hidden = false;
+  render();
 }
 
 /* ---------- events ---------- */
@@ -322,12 +337,14 @@ function bindEvents(){
     if (e.target.closest('#help-btn') || e.target.closest('#foot-help')){ e.preventDefault(); helpModal(); return; }
     if (e.target.closest('#logout-btn')){
       confirmDialog({
-        title:'Sign out?', body:'You will return to the sign-in screen. Demo data stays in this tab.',
+        title:'Sign out?', body:'You will return to the sign-in screen. Your data stays in the shop database.',
         ok:'Sign out',
         onOk(){
+          API.logout().catch(() => {});
           App.state.user = null;
           document.getElementById('app').hidden = true;
           document.getElementById('auth-screen').hidden = false;
+          document.getElementById('login-password').value = '';
           closePopovers();
         }
       });
@@ -404,4 +421,14 @@ function bindEvents(){
   bindEvents();
   initChartTips();
   renderQuickMenu();
+
+  // Real counts on the sign-in panel, then resume an existing session if there is one.
+  API.publicStats().then((s) => {
+    const p = document.getElementById('auth-stat-products');
+    const c = document.getElementById('auth-stat-customers');
+    if (p) p.textContent = String(s.products);
+    if (c) c.textContent = String(s.customers);
+  }).catch(() => {});
+
+  API.me().then((d) => enterApp(d.user)).catch(() => {});
 })();

@@ -129,13 +129,13 @@ about $6 — roughly ₦5,000 a month, and the app needs no code change.
 
 ## 5. What is not done yet
 
-- **The nine screens still read the in-memory demo data.** The API behind them
-  is real; the front end is the next block of work, screen by screen. Until
-  that is done the deployed app is a working backend plus a prototype UI, not
-  yet a shop the client can run.
+- **The nine screens are wired to the API** (`js/api.js`): login, dashboard,
+  inventory, sales, customers, inbox, AI console, reports and activity all read
+  and write the Neon database. Verified in headless Chrome, including creating
+  a customer and recording a sale through the UI.
 - The WhatsApp Cloud API webhook is not written yet. The AI engine itself is
   (`server/ai.js`): it calls Gemini or Claude with five tools, and every answer
-  comes from the database.
+  comes from the database. The test console in the app already talks to it.
 - Product photo uploads wait on the missing storage endpoint and keys.
 - No automated test suite yet; verification so far is the manual pass above.
 

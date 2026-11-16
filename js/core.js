@@ -12,7 +12,7 @@ const App = {
     theme: 'light',
     range: 30,
     navOpen: false,
-    inbox: { selected: 'cnv-01', filter: 'all', query: '' },
+    inbox: { selected: null, filter: 'all', query: '' },
     inv: { q: '', category: 'all', sort: 'name', dir: 1, status: 'all' },
     sales: { q: '', period: '30', status: 'all', sort: 'date', dir: -1 },
     cust: { q: '', tag: 'all', sort: 'name', dir: 1 },
@@ -122,10 +122,17 @@ const Calc = {
       return (Number(it.qty)||0) * unitCost;
     });
   },
-  profit(sale){ return Calc.total(sale) - Calc.cogs(sale); },
+  /* Profit is only a fact when every line has a real cost price. Until the
+     owner enters costs, this returns null and the UI says "unknown" rather
+     than showing takings as if they were profit. */
+  profit(sale){
+    if (sale && sale.profitKnown === false) return null;
+    return Calc.total(sale) - Calc.cogs(sale);
+  },
   margin(sale){
     const t = Calc.total(sale);
-    return t > 0 ? (Calc.profit(sale) / t) * 100 : 0;
+    const p = Calc.profit(sale);
+    return p === null || !t ? 0 : (p / t) * 100;
   },
   balance(sale){ return Math.max(0, Calc.total(sale) - (Number(sale.paid)||0)); },
   status(sale){
@@ -184,8 +191,9 @@ function metrics(days){
   });
   const revenue = sum(cur, s => Calc.total(s));
   const prevRevenue = sum(prev, s => Calc.total(s));
-  const profit = sum(cur, s => Calc.profit(s));
-  const prevProfit = sum(prev, s => Calc.profit(s));
+  const profit = sum(cur, s => Calc.profit(s) || 0);
+  const prevProfit = sum(prev, s => Calc.profit(s) || 0);
+  const profitUnknown = cur.filter(s => Calc.profit(s) === null).length;
   const items = sum(cur, s => sum(s.items, i => i.qty));
   const owed = sum(SEED.sales, s => Calc.balance(s));
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days);
@@ -220,7 +228,7 @@ function metrics(days){
   return {
     range: days,
     revenue, prevRevenue,
-    profit, prevProfit,
+    profit, prevProfit, profitUnknown,
     items,
     stockValue: Calc.stockValue(),
     lowStock: Calc.lowStock().length,
@@ -246,7 +254,7 @@ function revenueSeries(days){
     const k = dayKey(s.date);
     if (!byDay[k]) byDay[k] = { revenue:0, profit:0, orders:0 };
     byDay[k].revenue += Calc.total(s);
-    byDay[k].profit += Calc.profit(s);
+    byDay[k].profit += Calc.profit(s) || 0;
     byDay[k].orders += 1;
   });
   for (let i = days-1; i >= 0; i--){

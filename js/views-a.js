@@ -125,14 +125,16 @@ function viewDashboard(){
 
   return '<div class="dash">' +
     UI.pageHead('Dashboard',
-      'Sample data · ' + fmtDate(new Date().toISOString()) + ' · ' + todaysSales.length + ' sale' + (todaysSales.length===1?'':'s') + ' today worth <b class="strong">' + money(todayRevenue) + '</b>',
+      'Live data · ' + fmtDate(new Date().toISOString()) + ' · ' + todaysSales.length + ' sale' + (todaysSales.length===1?'':'s') + ' today worth <b class="strong">' + money(todayRevenue) + '</b>',
       '<div class="segmented">' + rangeBtns + '</div>' +
       '<button class="btn btn--primary" data-action="sale.new">' + icon('plus') + 'Record sale</button>') +
 
     '<div class="statstrip">' +
       statHero +
       (isAdmin
-        ? UI.kpi('Gross profit', money(m.profit), UI.delta(m.profitGrowth) + '<span>after cost of goods</span>', 'chart')
+        ? (m.profitUnknown
+            ? UI.kpi('Gross profit', 'Unknown', '<span>add cost prices to see profit</span>', 'chart')
+            : UI.kpi('Gross profit', money(m.profit), UI.delta(m.profitGrowth) + '<span>after cost of goods</span>', 'chart'))
         : UI.kpi('Outstanding', money(m.owed), '<span>owed by customers</span>', 'clock')) +
       UI.kpi('Stock value', money(m.stockValue), '<span>' + m.lowStock + ' low · ' + m.soldOut + ' sold out</span>', 'box') +
       UI.kpi('Items sold', num(m.items), '<span>' + m.salesCount + ' sales · avg ' + shortMoney(m.avgSale) + '</span>', 'receipt') +
@@ -238,7 +240,7 @@ function viewInventory(){
   const rows = list.map(p => {
     const st = Calc.productStatus(p);
     return '<tr>' +
-      '<td><div class="cell">' + UI.thumb(p) + '<div class="cell__text"><strong>' + esc(p.name) + '</strong><span>' + esc(p.category) + ' · ' + esc(p.id.toUpperCase()) + '</span></div></div></td>' +
+      '<td><div class="cell">' + UI.thumb(p) + '<div class="cell__text"><strong>' + esc(p.name) + '</strong><span>' + esc(p.category) + (p.size ? ' · ' + esc(p.size) : '') + '</span></div></div></td>' +
       '<td class="small">' + esc(p.size) + ' · ' + esc(p.colour) + '</td>' +
       '<td><span class="chip chip--line">' + esc(p.grade.replace('Grade ','')) + '</span></td>' +
       (isAdmin ? '<td class="num small muted">' + money(p.cost) + '</td>' : '') +
@@ -332,7 +334,7 @@ function productForm(id){
 
   openModal({
     title: p ? 'Edit product' : 'Add product',
-    sub: p ? p.name + ' · ' + p.id.toUpperCase() : 'New item in your catalogue',
+    sub: p ? p.name + ' · ' + p.category : 'New item in your catalogue',
     size: 'wide',
     body:
       '<div class="form-grid">' +
@@ -387,7 +389,7 @@ function productForm(id){
       };
       ['#pf-cost','#pf-price','#pf-qty'].forEach(sel => root.querySelector(sel).addEventListener('input', calc));
       calc();
-      root.querySelector('#pf-save').addEventListener('click', () => {
+      root.querySelector('#pf-save').addEventListener('click', async () => {
         const name = root.querySelector('#pf-name').value.trim();
         const price = Number(root.querySelector('#pf-price').value);
         const qty = Number(root.querySelector('#pf-qty').value);
@@ -402,23 +404,21 @@ function productForm(id){
           cost: Number(root.querySelector('#pf-cost').value) || 0,
           price,
           qty: isNaN(qty) ? 0 : qty,
-          lowStock: Number(root.querySelector('#pf-low').value) || 0,
+          lowStock: Number(root.querySelector('#pf-low').value) || 1,
           photo: root.querySelector('#pf-photo').value.trim(),
           notes: root.querySelector('#pf-notes').value.trim()
         };
-        if (p){
-          Object.assign(p, data);
-          p.status = Calc.productStatus(p);
-          logActivity('Updated product ' + p.name, 'Price ' + money(p.price) + ' · qty ' + p.qty, 'inventory');
-          toast('Product updated');
-        } else {
-          const created = Object.assign({ id: 'p' + String(SEED.products.length + 1).padStart(2,'0'), status:'available' }, data);
-          created.status = Calc.productStatus(created);
-          SEED.products.unshift(created);
-          logActivity('Added product ' + created.name, created.category + ' · ' + money(created.price) + ' · qty ' + created.qty, 'inventory');
-          toast('Product added to inventory');
+        const saveBtn = root.querySelector('#pf-save');
+        saveBtn.disabled = true;
+        try {
+          if (p){ await API.updateProduct(p.id, data); toast('Product updated'); }
+          else { await API.createProduct(data); toast('Product added to inventory'); }
+          await API.loadAll();
+          closeModal(); render();
+        } catch (err) {
+          toast(err.message, 'error');
+          saveBtn.disabled = false;
         }
-        closeModal(); render();
       });
     }
   });
@@ -433,10 +433,12 @@ App.actions['inv.delete'] = (el) => {
     title: 'Delete ' + p.name + '?',
     body: 'This removes the product from inventory and from the AI catalogue. Past sales keep their record.',
     ok: 'Delete product', danger: true,
-    onOk(){
-      SEED.products = SEED.products.filter(x => x.id !== p.id);
-      logActivity('Deleted product ' + p.name, p.category + ' · ' + p.id, 'inventory');
-      toast('Product deleted'); render();
+    async onOk(){
+      try {
+        await API.deleteProduct(p.id);
+        await API.loadAll();
+        toast('Product deleted'); render();
+      } catch (err) { toast(err.message, 'error'); }
     }
   });
 };
@@ -454,16 +456,16 @@ App.actions['inv.restock'] = (el) => {
       '</div>',
     footer: '<button class="btn btn--secondary" data-close-modal>Cancel</button><button class="btn btn--primary" id="rs-save">Add stock</button>',
     onMount(root){
-      root.querySelector('#rs-save').addEventListener('click', () => {
+      root.querySelector('#rs-save').addEventListener('click', async () => {
         const n = Number(root.querySelector('#rs-qty').value);
         if (!n || n < 1){ toast('Enter the number received', 'error'); return; }
         const before = p.qty;
-        p.qty += n;
         const nc = Number(root.querySelector('#rs-cost').value);
-        if (nc > 0) p.cost = nc;
-        p.status = Calc.productStatus(p);
-        logActivity('Restocked ' + p.name, 'Quantity ' + before + ' → ' + p.qty, 'inventory');
-        closeModal(); toast(n + ' units added to ' + p.name); render();
+        try {
+          await API.restock(p.id, before + n, nc);
+          await API.loadAll();
+          closeModal(); toast(n + ' units added to ' + p.name); render();
+        } catch (err) { toast(err.message, 'error'); }
       });
     }
   });
@@ -591,7 +593,8 @@ function viewSales(){
   const revenue = sum(list, x => Calc.total(x));
   const collected = sum(list, x => Number(x.paid)||0);
   const owed = sum(list, x => Calc.balance(x));
-  const profit = sum(list, x => Calc.profit(x));
+  const profit = sum(list, x => Calc.profit(x) || 0);
+  const profitUnknown = list.filter(x => Calc.profit(x) === null).length;
 
   const rows = list.map(sale => {
     const c = customerById(sale.customerId);
@@ -635,7 +638,9 @@ function viewSales(){
       UI.kpi('Sales value', money(revenue), '<span>' + list.length + ' sales in period</span>', 'receipt') +
       UI.kpi('Collected', money(collected), '<span>' + (revenue ? Math.round((collected/revenue)*100) : 0) + '% of sales value</span>', 'wallet') +
       UI.kpi('Outstanding', money(owed), '<span>balances still owed</span>', 'clock') +
-      (isAdmin ? UI.kpi('Gross profit', money(profit), '<span>after cost of goods</span>', 'chart')
+      (isAdmin ? (profitUnknown
+              ? UI.kpi('Gross profit', 'Unknown', '<span>add cost prices to see profit</span>', 'chart')
+              : UI.kpi('Gross profit', money(profit), '<span>after cost of goods</span>', 'chart'))
               : UI.kpi('Average sale', money(list.length ? revenue/list.length : 0), '<span>per recorded sale</span>', 'chart')) +
     '</div>' +
 
@@ -850,51 +855,55 @@ function saleForm(){
       paidEl.addEventListener('input', recalc);
       recalc();
 
-      root.querySelector('#sf-save').addEventListener('click', () => {
+      root.querySelector('#sf-save').addEventListener('click', async () => {
         const items = readItems();
         if (!items.length){ toast('Choose at least one product', 'error'); return; }
         const short = items.find(i => i.qty > i.p.qty);
         if (short){ toast('Only ' + short.p.qty + ' of ' + short.p.name + ' in stock', 'error'); return; }
         if (items.some(i => i.qty <= 0)){ toast('Quantity must be at least 1', 'error'); return; }
         if (!isAdmin && Number(discEl.value) > 0){ toast('Only the owner can apply a discount', 'error'); return; }
+
         let customerId = custSel.value || null;
+        let newName = null, newPhone = null;
         if (!customerId){
           const nm = root.querySelector('#sf-name').value.trim();
           const ph = root.querySelector('#sf-phone').value.trim();
           if (nm || ph){
             if (!nm || !ph){ toast('Enter both name and phone, or neither', 'error'); return; }
-            const existing = SEED.customers.find(c => c.phone.replace(/\s/g,'') === ph.replace(/\s/g,''));
-            if (existing){ customerId = existing.id; }
-            else {
-              const c = { id: uid('c'), name: nm, phone: ph, location:'Not provided', tags:['Retail'], notes:'Created at the till.', createdAt:new Date().toISOString().slice(0,10) };
-              SEED.customers.unshift(c); customerId = c.id;
-            }
+            newName = nm; newPhone = ph;
           }
         }
+
         const subtotal = sum(items, i => i.line);
         const discount = Math.min(Number(discEl.value) || 0, subtotal);
         const total = subtotal - discount;
         let paid = Number(paidEl.value) || 0;
         if (paid > total) paid = total;
-        const sale = {
-          id: nextInvoiceNo(),
-          date: root.querySelector('#sf-date').value || new Date().toISOString().slice(0,10),
-          customerId,
-          items: items.map(i => ({ productId:i.p.id, name:i.p.name, qty:i.qty, unitPrice:i.p.price, cost:i.p.cost })),
-          discount, paid: Math.max(0, paid),
-          method: root.querySelector('#sf-method').value,
-          staffId: App.state.user || 'u1',
-          aiAssisted: false,
-          note: ''
+
+        const payload = {
+          items: items.map(i => ({ product_id: i.p.id, qty: i.qty })),
+          discount,
+          payments: paid > 0 ? [{ amount: paid, method: root.querySelector('#sf-method').value }] : [],
+          channel: 'counter',
+          note: '',
         };
-        items.forEach(i => { i.p.qty = Math.max(0, i.p.qty - i.qty); i.p.status = Calc.productStatus(i.p); });
-        SEED.sales.push(sale);
-        logActivity('Recorded sale ' + sale.id, money(total) + ' · paid ' + money(sale.paid) + ' · ' + (customerId ? (customerById(customerId)||{}).name : 'Walk-in'), 'sale');
-        closeModal();
-        toast('Sale ' + sale.id + ' recorded · ' + money(total));
-        App.state.route = 'sales';
-        render();
-        setTimeout(() => receiptModal(sale.id), 150);
+        if (customerId) payload.customer_id = customerId;
+        else if (newName && newPhone){ payload.customer_name = newName; payload.customer_phone = newPhone; }
+
+        const saveBtn = root.querySelector('#sf-save');
+        saveBtn.disabled = true;
+        try {
+          const out = await API.createSale(payload);
+          await API.loadAll();
+          closeModal();
+          toast('Sale ' + out.sale.invoice_no + ' recorded · ' + money(total));
+          App.state.route = 'sales';
+          render();
+          setTimeout(() => receiptModal(out.sale.invoice_no), 150);
+        } catch (err) {
+          toast(err.message, 'error');
+          saveBtn.disabled = false;
+        }
       });
     }
   });
@@ -922,7 +931,7 @@ function receiptHTML(sale){
       '<div style="display:flex;justify-content:space-between;padding:2px 0;color:#555"><span>Subtotal</span><span>' + money(Calc.subtotal(sale)) + '</span></div>' +
       (sale.discount ? '<div style="display:flex;justify-content:space-between;padding:2px 0;color:#555"><span>Discount</span><span>− ' + money(sale.discount) + '</span></div>' : '') +
       '<div style="display:flex;justify-content:space-between;padding:5px 0;font-weight:600;font-size:13px;border-top:1px solid #eee;margin-top:3px"><span>Total</span><span>' + money(Calc.total(sale)) + '</span></div>' +
-      '<div style="display:flex;justify-content:space-between;padding:2px 0;color:#555"><span>Paid (' + esc(sale.method) + ')</span><span>' + money(sale.paid) + '</span></div>' +
+      '<div style="display:flex;justify-content:space-between;padding:2px 0;color:#555"><span>Paid (' + esc(sale.paid > 0 ? (sale.method && sale.method !== '—' ? sale.method : 'transfer') : 'no payment yet') + ')</span><span>' + money(sale.paid) + '</span></div>' +
       '<div style="display:flex;justify-content:space-between;padding:2px 0;font-weight:600"><span>Balance</span><span>' + money(Calc.balance(sale)) + '</span></div>' +
     '</div>' +
     '<div style="text-align:center;font-size:10px;color:#888;margin-top:16px;line-height:1.5">' +
@@ -938,7 +947,7 @@ function receiptModal(id){
   openModal({
     title: 'Receipt ' + sale.id,
     sub: fmtDate(sale.date) + ' · ' + esc((customerById(sale.customerId) || {}).name || 'Walk-in'),
-    body: '<div style="border:1px solid var(--line);border-radius:10px;padding:18px;background:var(--surface)">' + receiptHTML(sale) + '</div>',
+    body: '<div style="border:1px solid var(--line);border-radius:10px;padding:18px;background:#ffffff">' + receiptHTML(sale) + '</div>',
     footer: '<button class="btn btn--secondary" id="rc-copy">' + icon('copy') + 'Copy text</button>' +
       '<button class="btn btn--secondary" id="rc-print">' + icon('printer') + 'Print</button>' +
       (Calc.balance(sale) > 0 ? '<button class="btn btn--primary" id="rc-pay">Record payment</button>' : '<button class="btn btn--primary" data-close-modal>Done</button>'),
@@ -982,13 +991,15 @@ function paymentModal(id){
     '<p class="hint">Only staff or the owner can confirm a payment. The assistant never does.</p>',
     footer: '<button class="btn btn--secondary" data-close-modal>Cancel</button><button class="btn btn--primary" id="pay-save">Record payment</button>',
     onMount(root){
-      root.querySelector('#pay-save').addEventListener('click', () => {
+      root.querySelector('#pay-save').addEventListener('click', async () => {
         const amt = Number(root.querySelector('#pay-amt').value);
         if (!amt || amt <= 0){ toast('Enter an amount', 'error'); return; }
         if (amt > bal){ toast('That is more than the balance of ' + money(bal), 'error'); return; }
-        sale.paid += amt;
-        logActivity('Payment recorded on ' + sale.id, money(amt) + ' received · balance now ' + money(Calc.balance(sale)), 'sale');
-        closeModal(); toast('Payment of ' + money(amt) + ' recorded'); render();
+        try {
+          await API.addPayment(sale.dbId || sale.id, amt, sale.method === '—' ? 'transfer' : sale.method);
+          await API.loadAll();
+          closeModal(); toast('Payment of ' + money(amt) + ' recorded'); render();
+        } catch (err) { toast(err.message, 'error'); }
       });
     }
   });
@@ -1002,10 +1013,12 @@ App.actions['sale.delete'] = (el) => {
     title: 'Delete ' + sale.id + '?',
     body: 'This removes the sale from reports. Stock is not automatically returned — restock the items separately if needed.',
     ok: 'Delete sale', danger: true,
-    onOk(){
-      SEED.sales = SEED.sales.filter(s => s.id !== sale.id);
-      logActivity('Deleted sale ' + sale.id, money(Calc.total(sale)) + ' removed from records', 'sale');
-      toast('Sale deleted'); render();
+    async onOk(){
+      try {
+        await API.deleteSale(sale.dbId || sale.id);
+        await API.loadAll();
+        toast('Sale deleted'); render();
+      } catch (err) { toast(err.message, 'error'); }
     }
   });
 };
