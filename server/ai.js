@@ -356,6 +356,22 @@ async function respond({ conversationId, customerId, message, channel = 'whatsap
     };
   }
 
+  // If the provider failed in the last five minutes (no credit, bad key, outage)
+  // do not hammer it for every customer: hand over politely and log nothing new.
+  const recentFailure = await db
+    .one("SELECT created_at FROM audit_log WHERE action = 'ai.provider_error' ORDER BY created_at DESC LIMIT 1")
+    .catch(() => null);
+  if (recentFailure && Date.now() - new Date(recentFailure.created_at).getTime() < 5 * 60 * 1000) {
+    return {
+      reply:
+        'Thank you for your message. Our virtual assistant is unavailable right now, so a staff member will reply to you shortly. Sorry for the wait.',
+      toolCalls: [],
+      escalated: true,
+      provider: p,
+      error: 'provider paused after a recent failure',
+    };
+  }
+
   const s = await settings();
   const system = systemPrompt(s);
 
@@ -368,6 +384,7 @@ async function respond({ conversationId, customerId, message, channel = 'whatsap
   const usedTools = [];
   let escalated = false;
 
+  try {
   if (p === 'gemini') {
     const contents = turns.map((m) => ({
       role: m.author === 'customer' ? 'user' : 'model',
@@ -417,6 +434,25 @@ async function respond({ conversationId, customerId, message, channel = 'whatsap
     messages.push({ role: 'user', content: results });
   }
   return { reply, toolCalls: usedTools, escalated, provider: p };
+  } catch (err) {
+    // A key with no credit, a network blip or a model change must never look
+    // like the store ignoring a customer. Hand over to a human and say so.
+    console.error('[ai] provider failed:', err.message);
+    await db
+      .run(
+        'INSERT INTO audit_log (id, user_id, actor, action, entity, entity_id, detail, created_at) VALUES (?,?,?,?,?,?,?,?)',
+        [uid(), null, 'system', 'ai.provider_error', 'conversation', conversationId || null, String(err.message).slice(0, 300), now()]
+      )
+      .catch(() => {});
+    return {
+      reply:
+        'Thank you for your message. Our virtual assistant is unavailable right now, so a staff member will reply to you shortly. Sorry for the wait.',
+      toolCalls: usedTools,
+      escalated: true,
+      provider: p,
+      error: err.message,
+    };
+  }
 }
 
 /** Find or create a conversation for a customer, so every message is linked. */
@@ -437,12 +473,27 @@ async function ensureConversation({ customerId, channel = 'whatsapp', subject })
 
 async function status() {
   const p = provider();
+  const lastError = await db
+    .one("SELECT detail, created_at FROM audit_log WHERE action = 'ai.provider_error' ORDER BY created_at DESC LIMIT 1")
+    .catch(() => null);
   return {
     provider: p,
     model: p === 'gemini' ? GEMINI_MODEL : p === 'anthropic' ? ANTHROPIC_MODEL : null,
-    ready: !!p,
-    note: p ? 'Live model with stock tools.' : 'No API key set — the assistant hands every chat to a human.',
+    ready: !!p && !lastErrorWithin(lastError),
+    note: !p
+      ? 'No API key set — the assistant hands every chat to a human.'
+      : lastErrorWithin(lastError)
+        ? 'The provider rejected the last call: ' + lastError.detail
+        : 'Live model with stock tools.',
+    provider_error: lastErrorWithin(lastError) ? lastError.detail : null,
   };
+}
+
+/** An error seen in the last 15 minutes still counts as "not ready". */
+function lastErrorWithin(row) {
+  if (!row) return null;
+  const age = Date.now() - new Date(row.created_at).getTime();
+  return age < 15 * 60 * 1000 ? row.detail : null;
 }
 
 module.exports = { respond, ensureConversation, runTool, status, provider, TOOLS, systemPrompt };
