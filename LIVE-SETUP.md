@@ -127,6 +127,36 @@ about $6 — roughly ₦5,000 a month, and the app needs no code change.
 
 ---
 
+## 4a. WhatsApp webhook — how it will switch on
+
+The endpoint is live and already verified:
+
+- Callback URL: `https://dheelarhs-collection.onrender.com/api/whatsapp/webhook`
+- Verify token: `WHATSAPP_VERIFY_TOKEN` (currently `dheelarh-verify-2026` in Render)
+- Subscribe to the `messages` field.
+
+What happens today, without Meta credentials: an inbound message creates or
+matches the customer, writes the conversation, writes an assistant reply and
+flags it `whatsapp.reply_pending` for staff. The moment `WHATSAPP_TOKEN` and
+`WHATSAPP_PHONE_NUMBER_ID` are set, the same code posts the reply to Meta and
+nobody has to change the app.
+
+Tested with a simulated Meta payload: verification returned the challenge with
+the token and `403` without it, and the payload produced a customer record, a
+conversation, two stored messages and a reply.
+
+## 4b. Importing the existing Excel file
+
+Inventory → **Import** accepts the client's sheet saved as CSV (Excel: *Save as
+→ CSV*). Recognised columns, any order: `name, category, size, colour, grade,
+cost_price, selling_price, quantity, low_stock`. Only `name` and
+`selling_price` are required; a thousands separator like `9,500` is accepted and
+unreadable rows are reported as skipped rather than failing the whole import.
+
+Customer book → **Import** takes `name, phone, location, tags, notes`. Duplicate
+phone numbers are skipped, never overwritten — the second import of the same
+file adds nothing.
+
 ## 5. What is not done yet
 
 - **The nine screens are wired to the API** (`js/api.js`): login, dashboard,

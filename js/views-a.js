@@ -476,7 +476,7 @@ App.actions['inv.export'] = () => {
   const isAdmin = App.state.role === 'admin';
   const headers = ['id','name','category','size','colour','grade','selling_price','quantity','low_stock'].concat(isAdmin ? ['cost_price'] : []);
   const rows = SEED.products.map(p => [p.id, p.name, p.category, p.size, p.colour, p.grade, p.price, p.qty, p.lowStock].concat(isAdmin ? [p.cost] : []));
-  downloadFile('adeola-inventory.csv', toCSV(headers, rows));
+  downloadFile('dheelarh-inventory.csv', toCSV(headers, rows));
   logActivity('Exported inventory', SEED.products.length + ' products to CSV', 'inventory');
 };
 
@@ -519,41 +519,44 @@ App.actions['inv.import'] = () => {
       };
       textEl.addEventListener('input', previewImport);
       root.querySelector('#im-template').addEventListener('click', () => {
-        downloadFile('adeola-import-template.csv',
+        downloadFile('dheelarh-import-template.csv',
           toCSV(['name','category','size','colour','grade','cost_price','selling_price','quantity','low_stock'],
             [['Kente Shift Dress','Dresses','M','Multi','Grade A','16000','36000','4','2']]));
       });
-      root.querySelector('#im-run').addEventListener('click', () => {
+      root.querySelector('#im-run').addEventListener('click', async () => {
         const parsed = parseCSV(textEl.value);
         if (!parsed.rows.length){ toast('Paste rows or choose a file first', 'error'); return; }
         const find = (n) => parsed.headers.findIndex(h => h.toLowerCase().replace(/[\s_]/g,'') === n);
         const nameI = find('name');
         const priceI = find('sellingprice') > -1 ? find('sellingprice') : find('price');
         if (nameI < 0 || priceI < 0){ toast('A name and selling_price column are required', 'error'); return; }
-        let added = 0, skipped = 0;
-        parsed.rows.forEach(r => {
-          const name = (r[nameI] || '').trim();
-          const price = Number(String(r[priceI] || '').replace(/[^\d.]/g,''));
-          if (!name || !price){ skipped++; return; }
-          const catI = find('category'), sizeI = find('size'), colI = find('colour') > -1 ? find('colour') : find('color');
-          const gradeI = find('grade') > -1 ? find('grade') : find('quality');
-          const costI = find('costprice'), qtyI = find('quantity') > -1 ? find('quantity') : find('qty');
-          const lowI = find('lowstock');
-          const p = {
-            id: 'p' + String(SEED.products.length + 1 + added).padStart(2,'0'),
-            name, category: (r[catI] || 'Uncategorised').trim(), size: (r[sizeI] || 'One size').trim(),
-            colour: (r[colI] || '—').trim(), grade: (r[gradeI] || 'Grade A').trim(),
-            cost: Number(r[costI]) || 0, price, qty: Number(r[qtyI]) || 0,
-            lowStock: Number(r[lowI]) || 3, photo:'', notes:'Imported from spreadsheet'
-          };
-          p.status = Calc.productStatus(p);
-          SEED.products.unshift(p);
-          added++;
-        });
-        logActivity('Imported inventory', added + ' products added, ' + skipped + ' skipped', 'inventory');
-        closeModal();
-        toast(added + ' products imported' + (skipped ? ' · ' + skipped + ' skipped' : ''));
-        render();
+        const catI = find('category'), sizeI = find('size'), colI = find('colour') > -1 ? find('colour') : find('color');
+        const gradeI = find('grade') > -1 ? find('grade') : find('quality');
+        const costI = find('costprice'), qtyI = find('quantity') > -1 ? find('quantity') : find('qty');
+        const lowI = find('lowstock');
+        const rowsOut = parsed.rows.map(r => ({
+          name: (r[nameI] || '').trim(),
+          selling_price: r[priceI],
+          category: r[catI],
+          size: r[sizeI],
+          colour: r[colI],
+          grade: r[gradeI],
+          cost_price: r[costI],
+          qty: r[qtyI],
+          low_stock_at: r[lowI],
+        }));
+        const btn = root.querySelector('#im-run');
+        btn.disabled = true;
+        try {
+          const out = await API.req('POST', '/api/products/bulk', { rows: rowsOut });
+          await API.loadAll();
+          closeModal();
+          toast(out.added + ' products imported' + (out.skipped ? ' · ' + out.skipped + ' skipped' : ''));
+          render();
+        } catch (err) {
+          toast(err.message, 'error');
+          btn.disabled = false;
+        }
       });
     }
   });
@@ -1031,6 +1034,6 @@ App.actions['sales.export'] = () => {
     return [s.id, s.date, c ? c.name : 'Walk-in', c ? c.phone : '', s.items.map(i => i.qty + 'x ' + i.name).join('; '),
       Calc.subtotal(s), Calc.discount(s), Calc.total(s), s.paid, Calc.balance(s), Calc.status(s), s.method, staffById(s.staffId).name, s.aiAssisted ? 'yes' : 'no'];
   });
-  downloadFile('adeola-sales.csv', toCSV(headers, rows));
+  downloadFile('dheelarh-sales.csv', toCSV(headers, rows));
   logActivity('Exported sales', rows.length + ' sales to CSV', 'sale');
 };

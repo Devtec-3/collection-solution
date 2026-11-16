@@ -402,20 +402,31 @@ App.actions['set.addStaff'] = () => {
       '<div class="field span-2"><label class="field-label" for="st-email">Email</label><input class="input" id="st-email" type="email" placeholder="name@shop.com"></div>' +
       '<div class="field span-2"><label class="field-label">Role</label>' +
         '<select class="select" id="st-role"><option value="staff">Staff — sales, stock, customers</option><option value="admin">Owner — full access</option></select></div>' +
-      '<div class="span-2"><div class="banner">' + icon('info') + '<span>In production the person receives an email invite to set their own password. An invite link expires in 48 hours.</span></div></div>' +
+      '<div class="field span-2"><label class="field-label" for="st-pass">Temporary password</label>' +
+        '<input class="input" id="st-pass" type="text" placeholder="At least 8 characters">' +
+        '<span class="field-note">Give this to the person privately. They can change it after signing in.</span></div>' +
+      '<div class="span-2"><div class="banner">' + icon('info') + '<span>The account works immediately. Email invites are not connected yet, so share the temporary password yourself and ask them to change it.</span></div></div>' +
       '</div>',
-    footer: '<button class="btn btn--secondary" data-close-modal>Cancel</button><button class="btn btn--primary" id="st-save">Send invite</button>',
+    footer: '<button class="btn btn--secondary" data-close-modal>Cancel</button><button class="btn btn--primary" id="st-save">Create account</button>',
     onMount(root){
-      root.querySelector('#st-save').addEventListener('click', () => {
+      root.querySelector('#st-save').addEventListener('click', async () => {
         const name = root.querySelector('#st-name').value.trim();
         const email = root.querySelector('#st-email').value.trim();
+        const password = root.querySelector('#st-pass').value;
         if (!name || !email){ toast('Name and email are required', 'error'); return; }
-        SEED.staff.push({
-          id: uid('u'), name, email, role: root.querySelector('#st-role').value,
-          initials: initials(name), colour: stringColour(name), since: String(new Date().getFullYear())
-        });
-        logActivity('Invited staff member ' + name, email + ' · role ' + root.querySelector('#st-role').value, 'settings');
-        closeModal(); toast('Invite sent to ' + email); render();
+        if (password.length < 8){ toast('Temporary password needs at least 8 characters', 'error'); return; }
+        const btn = root.querySelector('#st-save');
+        btn.disabled = true;
+        try {
+          await API.req('POST', '/api/staff', { name, email, password, role: root.querySelector('#st-role').value });
+          await API.loadAll();
+          closeModal();
+          toast('Account created for ' + email);
+          render();
+        } catch (err) {
+          toast(err.message, 'error');
+          btn.disabled = false;
+        }
       });
     }
   });
@@ -428,10 +439,12 @@ App.actions['set.removeStaff'] = (el) => {
     title: 'Remove ' + u.name + '?',
     body: 'They will lose access immediately. Their past sales and actions remain in the activity log.',
     ok: 'Remove access', danger: true,
-    onOk(){
-      SEED.staff = SEED.staff.filter(x => x.id !== id);
-      logActivity('Removed staff access', u.name + ' · ' + u.email, 'settings');
-      toast('Staff access removed'); render();
+    async onOk(){
+      try {
+        await API.req('PATCH', '/api/staff/' + id, { active: false });
+        await API.loadAll();
+        toast('Staff access removed'); render();
+      } catch (err) { toast(err.message, 'error'); }
     }
   });
 };

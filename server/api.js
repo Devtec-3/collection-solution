@@ -623,6 +623,187 @@ route('POST', /^\/api\/conversations\/([^/]+)\/messages$/, async (req, res, { bo
   return { message: { id, conversation_id: conv.id, author: 'staff', body: message, created_at: stamp } };
 });
 
+/* --- bulk import (Excel/CSV pasted or uploaded by the browser) --- */
+
+route('POST', /^\/api\/products\/bulk$/, async (req, res, { body, user }) => {
+  const rows = Array.isArray(body.rows) ? body.rows.slice(0, 2000) : [];
+  if (!rows.length) throw new HttpError(400, 'No rows to import');
+  const owner = isOwner(user);
+  let added = 0;
+  let skipped = 0;
+  const errors = [];
+
+  for (const r of rows) {
+    const name = String(r.name || '').trim().slice(0, 160);
+    const price = Math.round(Number(String(r.selling_price ?? r.price ?? '').replace(/[^\d.]/g, '')));
+    if (!name || !price || price <= 0) { skipped += 1; continue; }
+    const qty = Math.max(0, Math.round(Number(r.qty ?? r.quantity ?? 0) || 0));
+    const low = Math.max(0, Math.round(Number(r.low_stock_at ?? r.low_stock ?? 2) || 2));
+    try {
+      await db.run(
+        `INSERT INTO products (id, sku, name, category, size, colour, grade, cost_price, selling_price, qty, low_stock_at, photo, status, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [
+          uid(), null, name,
+          String(r.category || 'Uncategorised').trim().slice(0, 80),
+          String(r.size || '').trim().slice(0, 40) || null,
+          String(r.colour || r.color || '').trim().slice(0, 60) || null,
+          String(r.grade || r.quality || '').trim().slice(0, 40) || null,
+          owner ? Math.max(0, Math.round(Number(String(r.cost_price ?? r.cost ?? '').replace(/[^\d.]/g, '')) || 0)) : 0,
+          price, qty, low, null, qty > 0 ? 'available' : 'sold out', now(), now(),
+        ]
+      );
+      added += 1;
+    } catch (err) {
+      skipped += 1;
+      if (errors.length < 5) errors.push(`${name}: ${err.message}`);
+    }
+  }
+
+  await audit(user, 'products.imported', 'product', null, `${added} added, ${skipped} skipped from spreadsheet`);
+  return { added, skipped, errors };
+});
+
+route('POST', /^\/api\/customers\/bulk$/, async (req, res, { body, user }) => {
+  const rows = Array.isArray(body.rows) ? body.rows.slice(0, 5000) : [];
+  if (!rows.length) throw new HttpError(400, 'No rows to import');
+  let added = 0;
+  let skipped = 0;
+
+  for (const r of rows) {
+    const name = String(r.name || '').trim().slice(0, 120);
+    const phone = normalisePhone(String(r.phone || ''));
+    if (!name || phone.length < 7) { skipped += 1; continue; }
+    const exists = await db.one('SELECT id FROM customers WHERE phone = ?', [phone]);
+    if (exists) { skipped += 1; continue; }
+    const tags = (Array.isArray(r.tags) ? r.tags.join(',') : String(r.tags || 'retail'))
+      .split(/[;,]/).map((t) => t.trim()).filter(Boolean).slice(0, 5).join(',');
+    await db.run(
+      'INSERT INTO customers (id, name, phone, alt_phone, location, tags, notes, opt_out, created_at, updated_at) VALUES (?,?,?,?,?,?,?,0,?,?)',
+      [uid(), name, phone, null, String(r.location || '').slice(0, 160) || null, tags || 'retail', String(r.notes || 'Imported contact.').slice(0, 1000), now(), now()]
+    );
+    added += 1;
+  }
+
+  await audit(user, 'customers.imported', 'customer', null, `${added} added, ${skipped} skipped (duplicate or incomplete)`);
+  return { added, skipped };
+});
+
+/* --- staff accounts --- */
+
+route('POST', /^\/api\/staff$/, async (req, res, { body, user }) => {
+  const name = text(body.name, 'Name', { max: 120 });
+  const email = text(body.email, 'Email', { max: 160 }).toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new HttpError(400, 'That email does not look right');
+  const password = text(body.password, 'Temporary password', { max: 200 });
+  if (password.length < 8) throw new HttpError(400, 'The temporary password needs at least 8 characters');
+  const role = body.role === 'admin' || body.role === 'owner' ? 'owner' : 'staff';
+  const exists = await db.one('SELECT id FROM users WHERE email = ?', [email]);
+  if (exists) throw new HttpError(409, 'That email already has an account');
+
+  const id = uid();
+  await db.run(
+    'INSERT INTO users (id, name, email, phone, role, password_hash, active, created_at) VALUES (?,?,?,?,?,?,1,?)',
+    [id, name, email, normalisePhone(body.phone || '') || null, role, auth.hashPassword(password), now()]
+  );
+  await audit(user, 'staff.created', 'user', id, `${name} · ${email} · ${role}`);
+  const row = await db.one('SELECT id, name, email, phone, role, active, created_at FROM users WHERE id = ?', [id]);
+  return { staff: row };
+}, { owner: true });
+
+route('PATCH', /^\/api\/staff\/([^/]+)$/, async (req, res, { body, user, params }) => {
+  const target = await db.one('SELECT * FROM users WHERE id = ?', [params[0]]);
+  if (!target) throw new HttpError(404, 'Account not found');
+  if (target.id === user.id) throw new HttpError(400, 'You cannot deactivate your own account');
+  await db.run('UPDATE users SET active = ? WHERE id = ?', [body.active ? 1 : 0, target.id]);
+  if (!body.active) await db.run('DELETE FROM sessions WHERE user_id = ?', [target.id]);
+  await audit(user, body.active ? 'staff.activated' : 'staff.deactivated', 'user', target.id, target.email);
+  return { ok: true };
+}, { owner: true });
+
+/* --- WhatsApp Cloud API webhook ---
+   Meta calls this URL for every customer message. The reply is written by the
+   same AI engine and stored against the customer. Sending needs WHATSAPP_TOKEN
+   and WHATSAPP_PHONE_NUMBER_ID; until those exist the reply is saved and
+   flagged for staff instead of being posted to Meta. */
+
+route('GET', /^\/api\/whatsapp\/webhook$/, async (req, res, { query }) => {
+  const mode = query.get('hub.mode');
+  const token = query.get('hub.verify_token');
+  const challenge = query.get('hub.challenge');
+  if (mode === 'subscribe' && token && token === (process.env.WHATSAPP_VERIFY_TOKEN || '')) {
+    sendText(res, 200, challenge || 'ok');
+    return { handled: true };
+  }
+  sendText(res, 403, 'Verification failed');
+  return { handled: true };
+}, { auth: false });
+
+route('POST', /^\/api\/whatsapp\/webhook$/, async (req, res, { body }) => {
+  const value = body && body.entry && body.entry[0] && body.entry[0].changes && body.entry[0].changes[0]
+    ? body.entry[0].changes[0].value
+    : null;
+  const msg = value && value.messages && value.messages[0];
+  if (!msg) return { received: true };
+
+  const phone = normalisePhone(msg.from);
+  const profileName = (value.contacts && value.contacts[0] && value.contacts[0].profile && value.contacts[0].profile.name) || 'WhatsApp customer';
+  const textBody = (msg.text && msg.text.body) || (msg.button && msg.button.text) || '';
+  if (!textBody) return { received: true };
+
+  let customer = await db.one('SELECT * FROM customers WHERE phone = ?', [phone]);
+  if (!customer) {
+    const id = uid();
+    await db.run(
+      'INSERT INTO customers (id, name, phone, alt_phone, location, tags, notes, opt_out, created_at, updated_at) VALUES (?,?,?,?,?,?,?,0,?,?)',
+      [id, profileName, phone, null, null, 'retail', 'Saved automatically from WhatsApp', now(), now()]
+    );
+    customer = await db.one('SELECT * FROM customers WHERE id = ?', [id]);
+  }
+
+  const conv = await ai.ensureConversation({ customerId: customer.id, channel: 'whatsapp' });
+  await db.run(
+    'INSERT INTO messages (id, conversation_id, author, body, created_at) VALUES (?,?,?,?,?)',
+    [uid(), conv.id, 'customer', textBody, now()]
+  );
+
+  let reply = '';
+  try {
+    const result = await ai.respond({ conversationId: conv.id, customerId: customer.id, message: textBody });
+    reply = result.reply || '';
+    if (reply) {
+      await db.run(
+        'INSERT INTO messages (id, conversation_id, author, body, created_at) VALUES (?,?,?,?,?)',
+        [uid(), conv.id, 'ai', reply, now()]
+      );
+      await db.run("UPDATE conversations SET status = ?, last_message = ?, updated_at = ? WHERE id = ?", [
+        result.escalated ? 'waiting' : 'ai', reply.slice(0, 200), now(), conv.id,
+      ]);
+    }
+  } catch (err) {
+    console.error('[whatsapp] assistant failed', err.message);
+    await db.run("UPDATE conversations SET status = 'waiting', updated_at = ? WHERE id = ?", [now(), conv.id]);
+  }
+
+  // Outbound send. Without Meta credentials the reply stays in the inbox for staff.
+  const token = process.env.WHATSAPP_TOKEN;
+  const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  if (reply && token && phoneId) {
+    await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ messaging_product: 'whatsapp', to: phone, type: 'text', text: { body: reply } }),
+    }).catch((err) => console.error('[whatsapp] send failed', err.message));
+  } else if (reply) {
+    await db.run(
+      'INSERT INTO audit_log (id, user_id, actor, action, entity, entity_id, detail, created_at) VALUES (?,?,?,?,?,?,?,?)',
+      [uid(), null, 'ai', 'whatsapp.reply_pending', 'conversation', conv.id, 'Reply written but WhatsApp sending is not connected', now()]
+    );
+  }
+
+  return { received: true };
+}, { auth: false });
+
 /* --- AI assistant --- */
 
 route('GET', /^\/api\/ai\/status$/, async () => ({ ai: await ai.status() }));
@@ -771,6 +952,15 @@ function send(res, status, payload) {
     'Cache-Control': 'no-store',
   });
   res.end(json);
+}
+
+function sendText(res, status, text) {
+  res.writeHead(status, {
+    'Content-Type': 'text/plain; charset=utf-8',
+    'Content-Length': Buffer.byteLength(String(text)),
+    'Cache-Control': 'no-store',
+  });
+  res.end(String(text));
 }
 
 function readJson(req) {

@@ -235,7 +235,7 @@ App.actions['cust.export'] = () => {
     const st = Calc.customer(c);
     return [c.name, c.phone, c.location, (c.tags||[]).join('; '), c.notes, st.orders, st.spent, st.owed, st.lastPurchase || '', c.createdAt];
   });
-  downloadFile('adeola-customers.csv', toCSV(headers, rows));
+  downloadFile('dheelarh-customers.csv', toCSV(headers, rows));
   logActivity('Exported customers', rows.length + ' contacts to CSV', 'customer');
 };
 
@@ -262,28 +262,31 @@ App.actions['cust.import'] = () => {
         r.onload = () => { textEl.value = String(r.result); };
         r.readAsText(f);
       });
-      root.querySelector('#ci-run').addEventListener('click', () => {
+      root.querySelector('#ci-run').addEventListener('click', async () => {
         const parsed = parseCSV(textEl.value);
         if (!parsed.rows.length){ toast('Choose a file or paste rows', 'error'); return; }
         const find = (n) => parsed.headers.findIndex(h => h.toLowerCase().replace(/[\s_]/g,'') === n);
         const nI = find('name'), pI = find('phone'), lI = find('location'), tI = find('tags'), noI = find('notes');
         if (nI < 0 || pI < 0){ toast('name and phone columns are required', 'error'); return; }
-        let added = 0, skipped = 0;
-        parsed.rows.forEach(r => {
-          const name = (r[nI]||'').trim(), phone = (r[pI]||'').trim();
-          if (!name || !phone){ skipped++; return; }
-          if (SEED.customers.some(c => c.phone.replace(/\s/g,'') === phone.replace(/\s/g,''))){ skipped++; return; }
-          SEED.customers.unshift({
-            id: uid('c'), name, phone,
-            location: (r[lI]||'Not provided').trim(),
-            tags: (r[tI]||'Retail').split(/[;,]/).map(x=>x.trim()).filter(Boolean),
-            notes: (r[noI]||'Imported contact.').trim(),
-            createdAt: new Date().toISOString().slice(0,10)
-          });
-          added++;
-        });
-        logActivity('Imported contacts', added + ' added, ' + skipped + ' skipped', 'customer');
-        closeModal(); toast(added + ' contacts imported' + (skipped ? ' · ' + skipped + ' skipped' : '')); render();
+        const rowsOut = parsed.rows.map(r => ({
+          name: (r[nI] || '').trim(),
+          phone: (r[pI] || '').trim(),
+          location: (r[lI] || '').trim(),
+          tags: (r[tI] || 'retail'),
+          notes: (r[noI] || '').trim(),
+        }));
+        const btn = root.querySelector('#ci-run');
+        btn.disabled = true;
+        try {
+          const out = await API.req('POST', '/api/customers/bulk', { rows: rowsOut });
+          await API.loadAll();
+          closeModal();
+          toast(out.added + ' contacts imported' + (out.skipped ? ' · ' + out.skipped + ' skipped as duplicate or incomplete' : ''));
+          render();
+        } catch (err) {
+          toast(err.message, 'error');
+          btn.disabled = false;
+        }
       });
     }
   });
