@@ -54,7 +54,7 @@ Staff accounts are created by the owner in Settings → Staff. Server-side rules
 | Sales & payments | Record a sale, part payment, balance, receipt, delete (owner), stock decremented in a transaction |
 | Customer book | Add, edit, delete, tags, notes, purchase history, **bulk import with duplicate detection** |
 | Inbox | Conversations and messages stored against the customer; a staff reply takes over from the assistant |
-| AI assistant | Gemini or Claude with five tools: stock lookup, alternatives, business details, draft order, escalate. Every fact comes from a SQL query |
+| AI assistant | **Live on Gemini 2.5 Flash**, five tools: stock lookup, alternatives, business details, draft order, escalate. Verified answering "is the Dior bag available?" with the real ₦15,000 price in ~4s, refusing to reveal cost price, suggesting in-stock alternatives when sold out, and applying the shop's payment-first policy to hold requests |
 | WhatsApp webhook | Meta verification (GET) and inbound message handling (POST) — builds the customer, the conversation and the reply |
 | Staff accounts | Owner creates a login with a temporary password; deactivating cuts access immediately and kills their sessions |
 | Activity log | Written by the server on every change, including AI actions |
@@ -69,7 +69,7 @@ Staff accounts are created by the owner in Settings → Staff. Server-side rules
 
 | Piece | Status | What unblocks it |
 |---|---|---|
-| AI credit | The Anthropic key is installed and valid, but that account has **no credit** — every call returns `400 credit balance is too low`, so chats are handed to a human | Add $5 at [console.anthropic.com](https://console.anthropic.com) → Billing, or use a free `GEMINI_API_KEY` from [aistudio.google.com/apikey](https://aistudio.google.com/apikey) instead |
+| Anthropic (optional) | Key is valid but the account has **no credit**, so Gemini is the provider. Nothing depends on it | Add $5 at [console.anthropic.com](https://console.anthropic.com) → Billing if you ever want Claude instead |
 | WhatsApp sending | Webhook receives and replies are written to the inbox; posting back to Meta needs the business number | `WHATSAPP_TOKEN` + `WHATSAPP_PHONE_NUMBER_ID` after Meta approval |
 | Voice calls | Not built | Twilio / Africa's Talking number. The shop's policy says **no WhatsApp calls**, so this is a normal phone line |
 | Product photos | URL field only | S3-compatible endpoint + access key + secret |

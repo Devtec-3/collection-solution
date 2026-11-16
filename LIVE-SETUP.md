@@ -171,7 +171,7 @@ file adds nothing.
 
 ---
 
-## 5a. AI provider: the Anthropic key has no credit
+## 5a. AI provider: live on Gemini, Anthropic has no credit
 
 The Anthropic key supplied is valid — it authenticates — but the account behind
 it has a zero balance, so every call returns:
@@ -187,7 +187,9 @@ Two ways forward, both without touching code:
 2. **Use Gemini free instead** — see the next section. A `GEMINI_API_KEY` takes
    priority over Anthropic the moment it is set.
 
-Until either happens the app is safe on purpose: `/api/ai/status` reports
+**Status: option 2 is done.** A Gemini key is installed in Render as `GEMINI_API_KEY` and the assistant is answering from live stock. The Anthropic path stays dead until credit is added, and nothing depends on it.
+
+If both keys ever fail the app is safe on purpose: `/api/ai/status` reports
 `ready: false` with the provider's message, the customer is told a staff member
 will reply, the conversation is flagged for a human, and the model is not called
 again for five minutes.
