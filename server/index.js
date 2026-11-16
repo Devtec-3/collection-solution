@@ -10,6 +10,19 @@ const db = require('./db');
 const api = require('./api');
 const { seed } = require('./seed');
 
+// Minimal .env loader: KEY=value lines in the project root, never overriding
+// variables already set by the host (Render sets its own).
+(function loadEnv() {
+  const file = path.join(__dirname, '..', '.env');
+  if (!fs.existsSync(file)) return;
+  for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+    const match = /^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/.exec(line);
+    if (!match) continue;
+    const value = match[2].replace(/^['"]|['"]$/g, '');
+    if (process.env[match[1]] === undefined) process.env[match[1]] = value;
+  }
+})();
+
 const PORT = Number(process.env.PORT || 3000);
 const ROOT = path.join(__dirname, '..');
 const PUBLIC_DIR = path.join(ROOT, 'public');
@@ -103,7 +116,12 @@ async function start() {
   const result = await seed();
   server.listen(PORT, () => {
     console.log(`Store system running on http://localhost:${PORT}  (database: ${mode})`);
-    if (result.seeded) console.log(`First-run seed created. Owner sign-in: ${result.ownerEmail}`);
+    if (result.seeded) {
+      console.log(`First-run seed created. Owner sign-in: ${result.ownerEmail}`);
+      if (result.generatedPassword) {
+        console.log(`ONE-TIME PASSWORD (not stored anywhere else): ${result.generatedPassword}`);
+      }
+    }
   });
 }
 

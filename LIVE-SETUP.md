@@ -122,11 +122,17 @@ about $6 — roughly ₦5,000 a month, and the app needs no code change.
 
 ---
 
-## 6. Credentials in this build
+## 6. Credentials
 
-- Owner sign-in: `muhammadabdulwadudalata@gmail.com` / `Ayinde2005`
-  (yours for now, to be replaced with the client's own before handover).
-- Staff test account: `amaka@dheelarhs.test` / `staffpass1` — created for
-  permission testing only, delete it before go-live.
-- Payment: the client's own provider, per your instruction. Nothing is
-  connected yet.
+No password is stored in this repository. The first owner account is created
+from `OWNER_EMAIL` / `OWNER_PASSWORD` on the first boot; if the password is
+left empty the server generates a strong one and prints it once.
+
+- Owner sign-in for now: your own email, with the password you set in Render.
+  Swap both to the client's before handover.
+- The password `Ayinde2005` is too weak for a store holding real customer
+  records and money. Use it only to get in on day one, then change it from the
+  Settings screen.
+- Staff test account `amaka@dheelarhs.test` is local-only and is not part of
+  the seed; delete it before go-live.
+- Payment: the client's own provider, per your instruction. Nothing connected.

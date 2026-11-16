@@ -75,11 +75,19 @@ async function seed() {
   const existing = await db.one('SELECT id FROM users LIMIT 1');
   if (existing) return { seeded: false };
 
-  const ownerEmail = (process.env.OWNER_EMAIL || 'muhammadabdulwadudalata@gmail.com').toLowerCase();
-  const ownerPassword = process.env.OWNER_PASSWORD || 'Ayinde2005';
+  // Credentials are never hard-coded: they come from the environment. If the
+  // password is missing a strong one is generated and printed once.
+  const ownerEmail = (process.env.OWNER_EMAIL || '').trim().toLowerCase();
+  if (!ownerEmail) throw new Error('OWNER_EMAIL is not set. Add it to .env or to the host environment.');
+  let ownerPassword = process.env.OWNER_PASSWORD || '';
+  let generated = false;
+  if (!ownerPassword) {
+    ownerPassword = crypto.randomBytes(9).toString('base64url');
+    generated = true;
+  }
 
   await txSeed(ownerEmail, ownerPassword);
-  return { seeded: true, ownerEmail };
+  return { seeded: true, ownerEmail, generatedPassword: generated ? ownerPassword : null };
 }
 
 async function txSeed(ownerEmail, ownerPassword) {
