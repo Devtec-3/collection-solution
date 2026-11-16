@@ -171,7 +171,28 @@ file adds nothing.
 
 ---
 
-## 5a. AI provider: use Gemini, not Claude
+## 5a. AI provider: the Anthropic key has no credit
+
+The Anthropic key supplied is valid — it authenticates — but the account behind
+it has a zero balance, so every call returns:
+
+> `400 invalid_request_error` — "Your credit balance is too low to access the
+> Anthropic API."
+
+Two ways forward, both without touching code:
+
+1. **Top up Anthropic** at console.anthropic.com → Billing (US$5 minimum). The
+   key is already in Render as `ANTHROPIC_API_KEY`, so the assistant starts
+   working on the next message after the balance lands.
+2. **Use Gemini free instead** — see the next section. A `GEMINI_API_KEY` takes
+   priority over Anthropic the moment it is set.
+
+Until either happens the app is safe on purpose: `/api/ai/status` reports
+`ready: false` with the provider's message, the customer is told a staff member
+will reply, the conversation is flagged for a human, and the model is not called
+again for five minutes.
+
+## 5b. AI provider: Gemini free tier
 
 Your Gemini **Pro subscription is not API access** — Google One AI Premium does
 not include it. You do not need it anyway:

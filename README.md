@@ -69,7 +69,7 @@ Staff accounts are created by the owner in Settings → Staff. Server-side rules
 
 | Piece | Status | What unblocks it |
 |---|---|---|
-| AI API key | Engine is built; without a key every chat is handed to a human | `GEMINI_API_KEY` from [aistudio.google.com/apikey](https://aistudio.google.com/apikey) — free, no card |
+| AI credit | The Anthropic key is installed and valid, but that account has **no credit** — every call returns `400 credit balance is too low`, so chats are handed to a human | Add $5 at [console.anthropic.com](https://console.anthropic.com) → Billing, or use a free `GEMINI_API_KEY` from [aistudio.google.com/apikey](https://aistudio.google.com/apikey) instead |
 | WhatsApp sending | Webhook receives and replies are written to the inbox; posting back to Meta needs the business number | `WHATSAPP_TOKEN` + `WHATSAPP_PHONE_NUMBER_ID` after Meta approval |
 | Voice calls | Not built | Twilio / Africa's Talking number. The shop's policy says **no WhatsApp calls**, so this is a normal phone line |
 | Product photos | URL field only | S3-compatible endpoint + access key + secret |
@@ -137,6 +137,10 @@ All writes are validated server-side; the browser is never trusted for prices, s
 | `GET` `POST` | `/api/conversations[/:id/messages]` | signed in |
 | `GET` `POST` | `/api/whatsapp/webhook` | Meta (verify token) |
 | `GET` `POST` | `/api/ai/status`, `/api/ai/chat`, `/api/ai/drafts` | owner |
+
+The AI status endpoint reports `ready: false` with the provider's own message when
+something is wrong, so a broken key shows up as *"the provider rejected the last
+call"* instead of a silently dead assistant.
 | `GET` `PATCH` | `/api/settings` | owner (business/policies readable by staff) |
 | `GET` | `/api/audit` | owner |
 
