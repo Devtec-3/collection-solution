@@ -12,6 +12,6 @@
     "node": ">=22.5"
   },
   "optionalDependencies": {
-    "pg": "^8.11.5"
+    "pg": "^8.23.1"
   }
 }

@@ -7,6 +7,7 @@
 const crypto = require('node:crypto');
 const db = require('./db');
 const auth = require('./auth');
+const ai = require('./ai');
 
 const now = () => new Date().toISOString();
 const uid = () => crypto.randomUUID();
@@ -555,6 +556,63 @@ route('POST', /^\/api\/conversations\/([^/]+)\/messages$/, async (req, res, { bo
   return { message: { id, conversation_id: conv.id, author: 'staff', body: message, created_at: stamp } };
 });
 
+/* --- AI assistant --- */
+
+route('GET', /^\/api\/ai\/status$/, async () => ({ ai: await ai.status() }));
+
+// Test console: the owner types as a customer would. Every message is stored
+// in a real conversation and every fact the model uses comes from the database.
+route('POST', /^\/api\/ai\/chat$/, async (req, res, { body, user }) => {
+  const phone = normalisePhone(body.phone || '08000000000');
+  const name = text(body.name, 'Name', { required: false, max: 120 }) || 'Test customer';
+  const message = text(body.message, 'Message', { max: 1500 });
+
+  let customer = await db.one('SELECT * FROM customers WHERE phone = ?', [phone]);
+  if (!customer) {
+    const id = uid();
+    await db.run(
+      'INSERT INTO customers (id, name, phone, alt_phone, location, tags, notes, opt_out, created_at, updated_at) VALUES (?,?,?,?,?,?,?,0,?,?)',
+      [id, name, phone, null, null, 'retail', 'Created from the AI test console', now(), now()]
+    );
+    customer = await db.one('SELECT * FROM customers WHERE id = ?', [id]);
+  }
+
+  const conversation = await ai.ensureConversation({ customerId: customer.id, channel: 'whatsapp' });
+
+  await db.run(
+    'INSERT INTO messages (id, conversation_id, author, body, created_at) VALUES (?,?,?,?,?)',
+    [uid(), conversation.id, 'customer', message, now()]
+  );
+
+  const result = await ai.respond({ conversationId: conversation.id, customerId: customer.id, message });
+
+  const replyText = result.reply || 'A staff member will reply to you shortly.';
+  await db.run(
+    'INSERT INTO messages (id, conversation_id, author, body, created_at) VALUES (?,?,?,?,?)',
+    [uid(), conversation.id, 'ai', replyText, now()]
+  );
+  await db.run(
+    'UPDATE conversations SET last_message = ?, status = ?, updated_at = ? WHERE id = ?',
+    [replyText.slice(0, 200), result.escalated ? 'waiting' : 'ai', now(), conversation.id]
+  );
+  await audit(user, 'ai.test_chat', 'conversation', conversation.id, `${result.provider || 'no-provider'} · tools: ${result.toolCalls.join(', ') || 'none'}`);
+
+  return {
+    conversation_id: conversation.id,
+    reply: replyText,
+    provider: result.provider,
+    tool_calls: result.toolCalls,
+    escalated: result.escalated,
+  };
+}, { owner: true });
+
+route('GET', /^\/api\/ai\/drafts$/, async () => {
+  const rows = await db.all(
+    "SELECT id, invoice_no, customer_name, customer_phone, total, status, note, created_at FROM sales WHERE status = 'reserved' ORDER BY created_at DESC"
+  );
+  return { drafts: rows };
+});
+
 /* --- settings --- */
 
 const PUBLIC_SETTING_KEYS = ['business', 'policies', 'categories'];
@@ -570,7 +628,7 @@ route('GET', /^\/api\/settings$/, async (req, res, { user }) => {
 });
 
 route('PATCH', /^\/api\/settings$/, async (req, res, { body, user }) => {
-  const allowed = ['business', 'policies', 'categories', 'ai', 'payments'];
+  const allowed = ['business', 'policies', 'categories', 'ai', 'payments', 'store'];
   const saved = {};
   for (const [key, value] of Object.entries(body || {})) {
     if (!allowed.includes(key)) continue;

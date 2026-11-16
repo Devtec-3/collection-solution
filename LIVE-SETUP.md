@@ -73,35 +73,50 @@ costs arrive. Nothing is invented to look good.
 
 | # | Needed | Why it blocks | Where it comes from |
 |---|---|---|---|
-| 1 | **Render API key** (`rnd_...`) | I cannot sign in to your Render account, only you can create the key. With it I create the service, set env vars and deploy. | Render → Account Settings → API Keys → Create |
-| 2 | **Postgres URL** | Render's free Postgres deletes itself 30 days after creation. A Neon free database persists. | neon.tech free project, or Render paid Postgres |
+| 1 | ~~Postgres URL~~ | **Done.** Neon `ep-restless-union-be04b263` is connected, migrated and seeded. | — |
+| 2 | **Render API key** (`rnd_...`) | Optional now: `render.yaml` is in the repo, so the service can be created from the Render dashboard in one click. The key only lets me do it without you. | Render → Account Settings → API Keys → Create |
 | 3 | **Meta / Facebook Business Portfolio** | WhatsApp Cloud API needs a verified business, a phone number not currently on WhatsApp, and a display name. Approval takes days, not minutes. | business.facebook.com |
 | 4 | **Payment provider keys** | You said use the client's own. Needed only when we take payment links; until then staff mark payments manually. | Paystack or Flutterwave dashboard |
 | 5 | **Voice number** | Either a new number (Twilio / Africa's Talking) or call-forwarding from an existing line. Costs money monthly, no free tier. | Twilio or Africa's Talking |
 | 6 | **Cost prices + opening stock** | Without them profit and stock value are meaningless. | The client's Excel |
-| 7 | **Claude API key** | Powers real AI replies instead of the simulated ones. | console.anthropic.com |
+| 7 | **Gemini API key** | Powers real AI replies instead of the simulated ones. Free tier, no paid plan needed. | aistudio.google.com/apikey |
+| 8 | **Storage keys** (optional) | Product photos. The snippet you sent is missing the endpoint and access keys, so uploads stay off until those arrive. | Provider dashboard → S3/R2 credentials |
 
-Items 1 and 2 are all I need to put this live on Render tonight. Items 3–7 can
-follow without blocking the store going live — the shop can run on manual
-WhatsApp replies while the API is approved.
+Item 2 plus the blueprint is all that is needed to put this live on Render.
+Items 3–8 follow without blocking the store: the shop runs on manual WhatsApp
+replies while Meta approval is pending.
 
 ---
 
-## 4. Render deployment (once I have the API key)
+## 4. Render deployment
 
-1. Create the Postgres database first (Neon free tier, or Render Postgres).
-2. Create a **Web Service** from `github.com/Devtec-3/collection-solution`.
-   - Build command: `npm install --omit=dev`
-   - Start command: `npm start`
-   - Health check path: `/api/health`
-3. Environment variables:
-   - `DATABASE_URL` — the Postgres connection string
-   - `NODE_ENV=production`
-   - `OWNER_EMAIL` / `OWNER_PASSWORD` — the first sign-in, changed afterwards
-4. First boot seeds the store, the catalogue and the policy text.
-5. **Sign in and immediately change the password.** `Ayinde2005` is a
-   placeholder for setup, not a production password, and it is written in this
-   file and in `.env.example`.
+`render.yaml` describes the whole service, so Render does the setup itself.
+
+1. Open **https://render.com/deploy?repo=https://github.com/Devtec-3/collection-solution**
+   while signed in to your Render account (or **New → Blueprint** and pick the
+   repo).
+2. Render reads `render.yaml` and asks for the secret values:
+   - `DATABASE_URL` — the Neon pooled string (already in `.env` locally)
+   - `PAYMENT_ACCOUNT_NUMBER` — `9021905797`
+   - `GEMINI_API_KEY` — once you have it (can be added later, the app runs without)
+   `OWNER_EMAIL` / `OWNER_PASSWORD` are only used if the database is empty. It is
+   already seeded, so you can skip them.
+3. Apply. Build takes about a minute; the health check is `/api/health`.
+4. The free plan sleeps after 15 idle minutes and takes ~1 minute to wake.
+   Fine for testing with the client, not for a customer messaging at 11pm.
+   Render Starter is $7/month and needs no code change.
+
+### Alternative without a Render account step
+
+`npm install && node server/index.js` runs the same server anywhere Node 22+ is
+available. Nothing in `server/` is Render-specific.
+
+### What the live server gives you today
+
+A real API at `/api/*` with real login and real data in Neon: products,
+customers, sales with part payments, dashboard totals, settings, audit log,
+AI test console. The nine HTML screens are still the prototype front end and
+are wired to the API next — see section 5.
 
 ### The free-tier trade-off, stated plainly
 
@@ -114,11 +129,35 @@ about $6 — roughly ₦5,000 a month, and the app needs no code change.
 
 ## 5. What is not done yet
 
-- The nine screens still read the in-memory demo data. Wiring them to this API
-  is the next chunk of work, screen by screen.
-- The AI assistant is still the scripted simulation; the Claude tool-calling
-  version and the WhatsApp webhook come after the screens are wired.
+- **The nine screens still read the in-memory demo data.** The API behind them
+  is real; the front end is the next block of work, screen by screen. Until
+  that is done the deployed app is a working backend plus a prototype UI, not
+  yet a shop the client can run.
+- The WhatsApp Cloud API webhook is not written yet. The AI engine itself is
+  (`server/ai.js`): it calls Gemini or Claude with five tools, and every answer
+  comes from the database.
+- Product photo uploads wait on the missing storage endpoint and keys.
 - No automated test suite yet; verification so far is the manual pass above.
+
+---
+
+## 5a. AI provider: use Gemini, not Claude
+
+Your Gemini **Pro subscription is not API access** — Google One AI Premium does
+not include it. You do not need it anyway:
+
+1. Go to **https://aistudio.google.com/apikey** with your Google account.
+2. **Create API key** in a new or existing project. Copy it (starts `AIza…`).
+3. Put it in `.env` as `GEMINI_API_KEY=…` and in Render's environment.
+4. Restart. **Settings → AI** now reports `provider: gemini`.
+
+That is the free tier: generous per-minute and per-day limits, no card. The
+model is `gemini-2.5-flash` — fast and cheap enough for shop replies. Claude
+still works if you ever prefer it: set `ANTHROPIC_API_KEY` and it takes
+priority only when no Gemini key exists. No code changes either way.
+
+Cost at real volume: a boutique answering ~40 conversations a day sits inside
+Gemini's free tier. Above that it is fractions of a naira per message.
 
 ---
 
@@ -128,11 +167,25 @@ No password is stored in this repository. The first owner account is created
 from `OWNER_EMAIL` / `OWNER_PASSWORD` on the first boot; if the password is
 left empty the server generates a strong one and prints it once.
 
-- Owner sign-in for now: your own email, with the password you set in Render.
-  Swap both to the client's before handover.
-- The password `Ayinde2005` is too weak for a store holding real customer
-  records and money. Use it only to get in on day one, then change it from the
-  Settings screen.
+- Owner sign-in for now: `muhammadabdulwadalata@gmail.com`. Swap to the
+  client's before handover.
+- The password `Ayinde2005` is written in this chat, in `.env` and in your
+  notes. Change it from the Settings screen on day one, before real customer
+  records go in.
 - Staff test account `amaka@dheelarhs.test` is local-only and is not part of
   the seed; delete it before go-live.
-- Payment: the client's own provider, per your instruction. Nothing connected.
+- Payment: transfer only. Opay **9021905797**, account name Dheelarh's
+  Collection, stored in `settings.payments` and given to the assistant as
+  information. The AI can share those details; **only staff can mark a payment
+  received.**
+
+### Neon Auth and Neon Storage — what I did and did not use
+
+- **Neon Auth** (`ep-restless-union-be04b263.neonauth…`): not connected. The app
+already has its own login with scrypt hashes and server-side sessions, and Neon
+Auth is still beta and would add a client library plus a rewrite of the login
+screen. Worth revisiting when the client wants Google sign-in or password reset
+by email; nothing else depends on it.
+- **Neon / S3 storage**: the snippet you pasted is missing the endpoint, access
+key and secret, so nothing could be wired. Send those four values and photo
+uploads take about 20 minutes to add.

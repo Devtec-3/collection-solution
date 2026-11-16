@@ -121,7 +121,15 @@ async function txSeed(ownerEmail, ownerPassword) {
         humanApprovalItems: [],
         brandVoiceNote: 'No voice notes and no WhatsApp calls — the assistant always replies by text.',
       },
-      payments: { provider: null, note: 'Manual confirmation only until a payment provider is connected.' },
+      payments: {
+        provider: 'transfer',
+        bank: process.env.PAYMENT_BANK || 'Opay',
+        accountName: process.env.PAYMENT_ACCOUNT_NAME || BUSINESS.name,
+        accountNumber: process.env.PAYMENT_ACCOUNT_NUMBER || '',
+        note: 'Transfer only. The assistant may share the account details, but only staff can confirm that money has arrived.',
+        confirmedBy: 'staff',
+      },
+      store: { currency: 'NGN', timezone: 'Africa/Lagos', lowStockDefault: 2 },
     };
 
     for (const [key, value] of Object.entries(settings)) {

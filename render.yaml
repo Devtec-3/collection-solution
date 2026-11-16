@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: dheelarhs-collection
+    runtime: node
+    plan: free
+    region: frankfurt
+    branch: main
+    buildCommand: npm install --include=optional --no-audit --no-fund
+    startCommand: node server/index.js
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Neon Postgres. Paste the pooled connection string when Render asks.
+      - key: DATABASE_URL
+        sync: false
+      # Only used on the very first boot of an empty database.
+      - key: OWNER_EMAIL
+        sync: false
+      - key: OWNER_PASSWORD
+        sync: false
+      - key: PAYMENT_BANK
+        value: Opay
+      - key: PAYMENT_ACCOUNT_NAME
+        value: Dheelarh's Collection
+      - key: PAYMENT_ACCOUNT_NUMBER
+        sync: false
+      # Add when you have them; the app runs without them.
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
